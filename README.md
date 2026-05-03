@@ -11,10 +11,12 @@ Tool slimming is only a schema-selection optimization. It must not bypass Hermes
 ## Install
 
 ```bash
-pip install hermes-tool-slimmer
+pip install "git+https://github.com/alias8818/hermes-tool-slimmer.git@v0.1.0"
 hermes plugins enable tool-slimmer
 hermes tool-slimmer status
 ```
+
+The package metadata is PyPI-ready, but this source release is distributed through GitHub until a package-index publish is completed.
 
 For a guided setup, see [`docs/quickstart.md`](docs/quickstart.md).
 
