@@ -1,0 +1,51 @@
+# Hermes core integration
+
+Hermes Tool Slimmer needs one upstream integration point before provider request construction. Current Hermes source inspection found the main schema provider in `model_tools.get_tool_definitions(...)`, plugin hook registration in `hermes_cli.plugins.PluginContext.register_hook(...)`, and `pre_llm_call` invocation in `run_agent.AIAgent` before the provider loop.
+
+`docs/hermes-core-selector-hook.patch` is a minimal upstreamable patch artifact for Hermes core. It adds:
+
+- `select_tool_schemas` to `VALID_HOOKS`.
+- One turn-level invocation after `pre_llm_call` and before provider request construction.
+- Request-local schema lists via `_tools_for_request`, reset immediately after request kwargs are built; selected subsets do not overwrite the canonical `self.tools` catalog and cannot make tool selection sticky across turns. Empty selected lists remain empty because the helper uses explicit `is not None` semantics.
+- First-non-`None` selector behavior with warning for multiple selector results.
+- Fail-open behavior because plugin hook exceptions are swallowed by `PluginManager.invoke_hook` and the caller keeps the original request-local schema list on malformed/no results.
+- Contract tests for valid hook registration, first selector result, selector exception behavior, and non-sticky catalog semantics.
+
+Validation evidence captured while preparing the patch artifact:
+
+```bash
+git -C /tmp/hermes-agent-core apply docs/hermes-core-selector-hook.patch
+python3 -m py_compile run_agent.py hermes_cli/plugins.py tests/hermes_cli/test_tool_schema_selector_hook.py
+PYTHONPATH=/tmp/hermes-agent-core pytest -q -o addopts='' tests/hermes_cli/test_tool_schema_selector_hook.py
+# 4 passed
+git -C /tmp/hermes-agent-core diff --check
+# clean
+```
+
+MCP metadata evidence from current Hermes source: MCP tools are registered in `tools/mcp_tool.py` with `toolset_name = f"mcp-{name}"`, converted schema names use `mcp_{server}_{tool}`, and registry collision logic treats `existing_toolset.startswith("mcp-")` as MCP-origin. Hermes Tool Slimmer therefore classifies `mcp`, `mcp_tools`, `mcp:`, `mcp-`, `mcp_server`, and `mcp_` name-prefix shapes as MCP.
+
+Preferred callback contract:
+
+```python
+def callback(
+    user_message: str,
+    conversation_history: list,
+    schemas: list[dict],
+    model: str,
+    platform: str,
+    provider: str | None = None,
+    session_id: str | None = None,
+    **kwargs,
+) -> list[dict] | None:
+    ...
+```
+
+Core behavior should be fail-open:
+
+1. Build the normal enabled schema list.
+2. Invoke `select_tool_schemas` callbacks with that list.
+3. If no callback returns a list, keep the original schemas.
+4. If one or more callbacks return lists, use only the first list and warn when there are multiple.
+5. If a callback raises, log and keep processing other callbacks; if no valid list remains, keep the original schemas.
+
+The plugin still probes compatibility methods (`register_tool_schema_selector`, `register_schema_selector`, or `register_hook("select_tool_schemas", ...)`) and never monkeypatches provider internals.

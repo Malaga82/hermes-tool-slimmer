@@ -1,0 +1,12 @@
+{
+  "mode": "keyword",
+  "selected": [
+    "terminal",
+    "read_file",
+    "search_files",
+    "mcp_github_search_issues",
+    "github_search_code",
+    "web_search"
+  ],
+  "estimated_reduction_percent": 15.0
+}

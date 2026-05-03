@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+from typing import Any
+
+from .tokenizer import tokenize, tokens_with_exact_identifier
+from .types import Schema, ToolDocument
+
+
+def tool_name(schema: Schema) -> str:
+    return str(schema.get("name") or schema.get("function", {}).get("name") or "")
+
+
+def tool_description(schema: Schema) -> str:
+    return str(schema.get("description") or schema.get("function", {}).get("description") or "")
+
+
+def tool_toolset(schema: Schema) -> str | None:
+    for key in ("toolset", "tool_set", "namespace", "server", "mcp_server"):
+        value = schema.get(key)
+        if value:
+            return str(value)
+    return None
+
+
+def _schema_parameters(schema: Schema) -> dict[str, Any]:
+    params = schema.get("parameters") or schema.get("input_schema") or {}
+    if not params and isinstance(schema.get("function"), dict):
+        params = schema["function"].get("parameters") or {}
+    return params if isinstance(params, dict) else {}
+
+
+def _walk_schema(value: Any) -> Iterable[str]:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            yield str(key)
+            if key in {"description", "title", "enum"}:
+                yield str(nested)
+            yield from _walk_schema(nested)
+    elif isinstance(value, list):
+        for item in value[:25]:
+            yield from _walk_schema(item)
+    elif isinstance(value, (str, int, float, bool)):
+        yield str(value)
+
+
+def build_document(schema: Schema) -> ToolDocument:
+    name = tool_name(schema)
+    toolset = tool_toolset(schema)
+    params = _schema_parameters(schema)
+    parameter_tokens = set(tokenize(" ".join(params.get("properties", {}).keys())))
+    chunks = [name, toolset or "", tool_description(schema), " ".join(_walk_schema(params))]
+    tokens: list[str] = []
+    tokens.extend(tokens_with_exact_identifier(name) * 4)
+    if toolset:
+        tokens.extend(tokens_with_exact_identifier(toolset) * 2)
+    tokens.extend(tokenize("\n".join(chunks)))
+    tokens.extend(list(parameter_tokens) * 2)
+    return ToolDocument(name=name, schema=schema, text="\n".join(chunks), tokens=tokens, toolset=toolset, parameter_tokens=parameter_tokens)
+
+
+def build_corpus(schemas: Iterable[Schema]) -> list[ToolDocument]:
+    return [build_document(schema) for schema in schemas if tool_name(schema)]

@@ -1,0 +1,22 @@
+plugins:
+  enabled:
+    - tool-slimmer
+
+tool_slimmer:
+  enabled: true
+  mode: keyword
+  top_k: 8
+  always_include:
+    - terminal
+    - read_file
+    - write_file
+    - patch
+    - search_files
+  never_defer:
+    - terminal
+    - read_file
+  include_mcp_tools: true
+  include_native_tools: true
+  log_decisions: true
+  fail_open: true
+  dry_run: false

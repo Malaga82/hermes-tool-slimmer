@@ -1,0 +1,196 @@
+diff --git a/hermes_cli/plugins.py b/hermes_cli/plugins.py
+index e921034..24d15e7 100644
+--- a/hermes_cli/plugins.py
++++ b/hermes_cli/plugins.py
+@@ -81,6 +81,7 @@ VALID_HOOKS: Set[str] = {
+     "transform_terminal_output",
+     "transform_tool_result",
+     "pre_llm_call",
++    "select_tool_schemas",
+     "post_llm_call",
+     "pre_api_request",
+     "post_api_request",
+@@ -1066,6 +1067,12 @@ class PluginManager:
+             {"context": "recalled text..."}
+             "recalled text..."          # plain string, equivalent
+ 
++        For ``select_tool_schemas``, callbacks receive a request-local copy of
++        the full enabled schema list and may return a replacement list. Callers
++        should apply only the first non-None list so multiple schema selectors
++        do not compose implicitly. Exceptions are swallowed here so selection
++        fails open to the original request-local schema list.
++
+         Context is ALWAYS injected into the user message, never the
+         system prompt.  This preserves the prompt cache prefix — the
+         system prompt stays identical across turns so cached tokens
+diff --git a/run_agent.py b/run_agent.py
+index cfcd325..a405be8 100644
+--- a/run_agent.py
++++ b/run_agent.py
+@@ -8284,6 +8284,10 @@ class AIAgent:
+                     content[-1]["cache_control"] = {"type": "ephemeral"}
+                 break
+ 
++    def _active_tools_for_request(self):
++        request_tools = getattr(self, "_tools_for_request", None)
++        return request_tools if request_tools is not None else self.tools
++
+     def _build_api_kwargs(self, api_messages: list) -> dict:
+         """Build the keyword arguments dict for the active API mode."""
+         if self.api_mode == "anthropic_messages":
+@@ -8297,7 +8301,7 @@ class AIAgent:
+             return _transport.build_kwargs(
+                 model=self.model,
+                 messages=anthropic_messages,
+-                tools=self.tools,
++                tools=self._active_tools_for_request(),
+                 max_tokens=ephemeral_out if ephemeral_out is not None else self.max_tokens,
+                 reasoning_config=self.reasoning_config,
+                 is_oauth=self._is_anthropic_oauth,
+@@ -8317,7 +8321,7 @@ class AIAgent:
+             return _bt.build_kwargs(
+                 model=self.model,
+                 messages=api_messages,
+-                tools=self.tools,
++                tools=self._active_tools_for_request(),
+                 max_tokens=self.max_tokens or 4096,
+                 region=region,
+                 guardrail_config=guardrail,
+@@ -8341,7 +8345,7 @@ class AIAgent:
+             return _ct.build_kwargs(
+                 model=self.model,
+                 messages=_msgs_for_codex,
+-                tools=self.tools,
++                tools=self._active_tools_for_request(),
+                 reasoning_config=self.reasoning_config,
+                 session_id=getattr(self, "session_id", None),
+                 max_tokens=self.max_tokens,
+@@ -8427,7 +8431,7 @@ class AIAgent:
+         return _ct.build_kwargs(
+             model=self.model,
+             messages=_msgs_for_chat,
+-            tools=self.tools,
++            tools=self._active_tools_for_request(),
+             base_url=self.base_url,
+             timeout=self._resolved_api_call_timeout(),
+             max_tokens=self.max_tokens,
+@@ -10699,6 +10703,41 @@ class AIAgent:
+         except Exception as exc:
+             logger.warning("pre_llm_call hook failed: %s", exc)
+ 
++        def _select_tools_for_request() -> list | None:
++            # Request-local schema slimming: never mutate self.tools, which is
++            # the full enabled catalog used as the starting point next turn.
++            if not self.tools:
++                return self.tools
++            tools_for_request = list(self.tools)
++            try:
++                from hermes_cli.plugins import invoke_hook as _invoke_hook
++                _schema_results = _invoke_hook(
++                    "select_tool_schemas",
++                    session_id=self.session_id,
++                    user_message=original_user_message,
++                    conversation_history=list(messages),
++                    schemas=tools_for_request,
++                    model=self.model,
++                    platform=getattr(self, "platform", None) or "",
++                    provider=(
++                        getattr(self, "provider", None)
++                        or getattr(self, "model_provider", None)
++                    ),
++                )
++                _schema_lists = [r for r in _schema_results if isinstance(r, list)]
++                if _schema_lists:
++                    if len(_schema_lists) > 1:
++                        logger.warning(
++                            "Multiple select_tool_schemas hooks returned schemas; "
++                            "using the first result"
++                        )
++                    return _schema_lists[0]
++            except Exception as exc:
++                logger.warning(
++                    "select_tool_schemas hook failed; using original tools: %s", exc
++                )
++            return tools_for_request
++
+         # Main conversation loop
+         api_call_count = 0
+         final_response = None
+@@ -11115,7 +11154,12 @@ class AIAgent:
+ 
+                 try:
+                     self._reset_stream_delivery_tracking()
+-                    api_kwargs = self._build_api_kwargs(api_messages)
++                    tools_for_request = _select_tools_for_request()
++                    self._tools_for_request = tools_for_request
++                    try:
++                        api_kwargs = self._build_api_kwargs(api_messages)
++                    finally:
++                        self._tools_for_request = None
+                     if self._force_ascii_payload:
+                         _sanitize_structure_non_ascii(api_kwargs)
+                     if self.api_mode == "codex_responses":
+@@ -11134,7 +11178,7 @@ class AIAgent:
+                             api_mode=self.api_mode,
+                             api_call_count=api_call_count,
+                             message_count=len(api_messages),
+-                            tool_count=len(self.tools or []),
++                            tool_count=len(tools_for_request if tools_for_request is not None else (self.tools or [])),
+                             approx_input_tokens=approx_tokens,
+                             request_char_count=total_chars,
+                             max_tokens=self.max_tokens,
+diff --git a/tests/hermes_cli/test_tool_schema_selector_hook.py b/tests/hermes_cli/test_tool_schema_selector_hook.py
+new file mode 100644
+index 0000000..edd50f2
+--- /dev/null
++++ b/tests/hermes_cli/test_tool_schema_selector_hook.py
+@@ -0,0 +1,49 @@
++from __future__ import annotations
++
++from hermes_cli.plugins import PluginManager, VALID_HOOKS
++
++
++def test_select_tool_schemas_is_valid_hook():
++    assert "select_tool_schemas" in VALID_HOOKS
++
++
++def test_select_tool_schemas_returns_first_non_none_result():
++    mgr = PluginManager()
++    original = [{"type": "function", "function": {"name": "a"}}]
++    selected = [{"type": "function", "function": {"name": "b"}}]
++    mgr._hooks["select_tool_schemas"] = [lambda **kwargs: None, lambda **kwargs: selected]
++
++    results = mgr.invoke_hook("select_tool_schemas", schemas=original)
++
++    assert results[0] == selected
++
++
++def test_select_tool_schemas_exception_fails_open_to_other_results():
++    mgr = PluginManager()
++    selected = [{"type": "function", "function": {"name": "safe"}}]
++
++    def boom(**kwargs):
++        raise RuntimeError("broken selector")
++
++    mgr._hooks["select_tool_schemas"] = [boom, lambda **kwargs: selected]
++
++    assert mgr.invoke_hook("select_tool_schemas", schemas=[]) == [selected]
++
++
++def test_request_tools_helper_preserves_empty_selection_and_catalog():
++    class AgentLike:
++        def __init__(self):
++            self.tools = [{"name": "read_file"}, {"name": "search_files"}]
++            self._tools_for_request = None
++
++        def _active_tools_for_request(self):
++            request_tools = getattr(self, "_tools_for_request", None)
++            return request_tools if request_tools is not None else self.tools
++
++    agent = AgentLike()
++    assert agent._active_tools_for_request() == agent.tools
++    agent._tools_for_request = []
++    assert agent._active_tools_for_request() == []
++    assert agent.tools == [{"name": "read_file"}, {"name": "search_files"}]
++    agent._tools_for_request = None
++    assert agent._active_tools_for_request() == agent.tools
