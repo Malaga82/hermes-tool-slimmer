@@ -3,9 +3,11 @@
 ## 1. Install
 
 ```bash
-pip install hermes-tool-slimmer
+pip install "git+https://github.com/alias8818/hermes-tool-slimmer.git@v0.1.0"
 hermes plugins enable tool-slimmer
 ```
+
+The package metadata is PyPI-ready, but this source release is distributed through GitHub until a package-index publish is completed.
 
 ## 2. Add configuration
 
