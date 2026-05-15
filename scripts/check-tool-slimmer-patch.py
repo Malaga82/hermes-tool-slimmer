@@ -56,6 +56,10 @@ def main() -> int:
     
     if applied:
         print("PATCH_CHECK: hermes-tool-slimmer patch is applied ✅")
+        # Clean up flag if it exists
+        flag = "/tmp/.slimmer-patch-missing"
+        if os.path.exists(flag):
+            os.remove(flag)
         return 0
     
     print("PATCH_CHECK: hermes-tool-slimmer patch is NOT applied ⚠️")
@@ -64,9 +68,19 @@ def main() -> int:
         print(f"  - {m}")
     print()
     print("TO FIX: cd /opt/hermes && patch -p1 -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selector-hook.patch")
-    print("NOTIFY:discord")
+    
+    # Write flag file for Hermes cron to pick up and send Discord notification
+    flag = "/tmp/.slimmer-patch-missing"
+    with open(flag, "w") as f:
+        f.write("tool-slimmer core patch non applicata.\n")
+        f.write("Per fixare:\n")
+        f.write("cd /opt/hermes && patch -p1 -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selector-hook.patch\n")
+        f.write("Poi riavvia il gateway.\n")
+    print(f"Flag written to {flag} — Hermes cron will notify on Discord")
+    
     return 1
 
 
 if __name__ == "__main__":
+    import os
     sys.exit(main())

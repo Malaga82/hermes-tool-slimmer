@@ -42,21 +42,7 @@ fi
 # --- Check tool-slimmer core patch status ---
 PATCH_CHECK="/opt/data/scripts/check-tool-slimmer-patch.py"
 if [ -f "$PATCH_CHECK" ]; then
-    PATCH_OUTPUT=$(/opt/hermes/.venv/bin/python3 "$PATCH_CHECK" 2>&1) || {
-        echo "$PATCH_OUTPUT"
-        echo "⚠️  tool-slimmer patch NOT applied — sending Discord notification"
-        # Send Discord notification via webhook
-        DISCORD_WEBHOOK_URL="${DISCORD_PATCH_WEBHOOK:-}"
-        if [ -n "$DISCORD_WEBHOOK_URL" ]; then
-            MESSAGE="⚠️ **tool-slimmer patch non applicata** dopo l'ultimo avvio.\nIl tool-slimmer è installato ma la core patch manca — nessun risparmio token.\n\nPer fixare:\n\`\`\`bash\ncd /opt/hermes && patch -p1 -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selector-hook.patch\n\`\`\`\nPoi riavvia il gateway."
-            curl -sf -X POST "$DISCORD_WEBHOOK_URL" \
-                -H "Content-Type: application/json" \
-                -d "{\"content\": \"$MESSAGE\"}" > /dev/null 2>&1 || true
-        else
-            echo "   (no DISCORD_PATCH_WEBHOOK set — skipping Discord notification)"
-            echo "   Set DISCORD_PATCH_WEBHOOK in .env to enable notifications"
-        fi
-    }
+    /opt/hermes/.venv/bin/python3 "$PATCH_CHECK" 2>&1 || true
 fi
 
 # --- Hand off to the real entrypoint ---
