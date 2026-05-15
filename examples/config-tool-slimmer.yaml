@@ -1,0 +1,20 @@
+# tool-slimmer configuration example for config.yaml
+# Copy the relevant sections into your Hermes config.yaml
+
+tool_slimmer:
+  enabled: true
+  mode: keyword           # keyword (BM25), eager (all tools), anthropic_tool_search
+  top_k: 12               # Number of BM25-selected tools per turn (in addition to always_include)
+  always_include:         # Tools always included regardless of query
+    - terminal
+    - read_file
+    - write_file
+    - patch
+    - search_files
+  fail_open: true         # On error, pass all tools through (safe default)
+  dry_run: false          # Set true to log decisions without filtering
+  log_decisions: true     # Log which tools were selected/deselected
+
+plugins:
+  enabled:
+    - tool-slimmer

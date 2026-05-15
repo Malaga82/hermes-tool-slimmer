@@ -1,122 +1,149 @@
-# Hermes Tool Slimmer
+# hermes-tool-slimmer — Fork Malaga82
 
-Hermes Tool Slimmer reduces repeated tool-schema overhead by selecting the smallest useful tool set for a turn. It builds an indexable corpus from Hermes tool schemas, ranks candidate tools with local BM25 plus explicit boosts, and fails open to the original schema list when anything goes wrong.
+Fork of [alias8818/hermes-tool-slimmer](https://github.com/alias8818/hermes-tool-slimmer) with custom patches for:
 
-## Why
+1. **Core patch updated for Hermes v0.13.0** — original patch failed 4/8 hunks
+2. **Italian alias expansion** — BM25 tokenizer expands Italian queries to English for better tool matching
+3. **Auto-expanding dictionary** — cron script uses LLM to add new Italian→English mappings
+4. **Extra call sites covered** — 4 external `self.tools` references the original patch missed
 
-Large Hermes installations can expose dozens of native and MCP tools. A 57-tool schema catalog can serialize to roughly 73 KB, or about 18K approximate prompt tokens using the documented `bytes / 4` estimate. Selecting 8-12 relevant tools for a repository-search turn can reduce that to about 15 KB / 3.7K approximate tokens while keeping configured safety tools hot.
+## Quick Start
 
-Tool slimming is only a schema-selection optimization. It must not bypass Hermes approval prompts, tool execution controls, provider auth, disabled toolsets, or any runtime safety policy.
-
-## Install
-
-```bash
-pip install "git+https://github.com/alias8818/hermes-tool-slimmer.git@v0.1.0"
-hermes plugins enable tool-slimmer
-hermes tool-slimmer status
-```
-
-The package metadata is PyPI-ready, but this source release is distributed through GitHub until a package-index publish is completed.
-
-For a guided setup, see [`docs/quickstart.md`](docs/quickstart.md).
-
-For local development:
+### 1. Install plugin
 
 ```bash
-pip install -e ".[dev]"
-pytest
+# From this repo
+cd /opt/data
+git clone https://github.com/Malaga82/hermes-tool-slimmer.git
+cd hermes-tool-slimmer
+/opt/hermes/.venv/bin/pip install -e .
+
+# Symlink to Hermes plugins
+ln -sf /opt/data/hermes-tool-slimmer /opt/data/plugins/tool-slimmer
 ```
 
-## Configure
+### 2. Apply core patch to Hermes
+
+```bash
+cd /opt/hermes
+patch -p1 --dry-run -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selector-hook.patch
+# If dry-run passes:
+patch -p1 -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selector-hook.patch
+```
+
+### 3. Configure
+
+Add to `config.yaml`:
 
 ```yaml
+tool_slimmer:
+  enabled: true
+  mode: keyword
+  top_k: 12
+  always_include:
+    - terminal
+    - read_file
+    - write_file
+    - patch
+    - search_files
+
 plugins:
   enabled:
     - tool-slimmer
-
-tool_slimmer:
-  enabled: true
-  mode: keyword        # eager | keyword | hybrid | anthropic_tool_search
-  top_k: 8             # selected after always_include
-  always_include: [terminal, read_file, write_file, patch, search_files]
-  never_defer: [terminal, read_file]
-  include_mcp_tools: true
-  include_native_tools: true
-  log_decisions: true
-  fail_open: true      # selector errors preserve the original full schema list
-  dry_run: false       # true logs/injects diagnostics but does not alter schemas
 ```
 
-## Commands
+### 4. Italian aliases (optional but recommended)
+
+Copy the alias dictionary to `$HERMES_HOME`:
 
 ```bash
-hermes tool-slimmer status
-hermes tool-slimmer doctor
-hermes tool-slimmer index rebuild --schemas examples/tools.yaml
-hermes tool-slimmer index show --top 20
-hermes tool-slimmer select "search this repo for MCP registration code" --schemas tools.yaml
-hermes tool-slimmer benchmark --prompts examples/prompts.yaml --schemas examples/tools.yaml
-hermes tool-slimmer recommend-config
+cp /opt/data/hermes-tool-slimmer/aliases/it-en.yaml $HERMES_HOME/tool-slimmer-it-aliases.yaml
 ```
 
-Slash commands:
+The tokenizer automatically loads this file and expands Italian tokens with English equivalents for BM25 matching.
 
-```text
-/tool-slimmer status
-/tool-slimmer select search this repo for MCP registration code
-/tool-slimmer dry-run on
-/tool-slimmer dry-run off
-```
-
-## Provider behavior
-
-| Provider path | Behavior |
-|---|---|
-| Anthropic native | Tool Search/defer loading if `mode: anthropic_tool_search` and Hermes core supports the required request serialization/headers. |
-| Bedrock/Vertex/Azure Anthropic | Attempt only when the Hermes provider stack supports the Anthropic Tool Search path for that provider/model. |
-| OpenRouter/OpenAI/local | Fall back to deterministic keyword selection, hybrid when implemented, or eager mode according to config; do not send Anthropic-only Tool Search definitions. |
-
-## Integration status
-
-The standalone plugin registers diagnostics tools, slash commands, CLI commands, a dry-run `pre_llm_call` diagnostic hook, and a `select_tool_schemas` callback when Hermes core supports it.
-
-Supported/target core surfaces:
-
-- `ctx.register_tool_schema_selector(callback)`
-- `ctx.register_schema_selector(callback)`
-- `ctx.register_hook("select_tool_schemas", callback)`
-
-If none exists, the plugin does not monkeypatch provider internals. It remains useful for dry-run diagnostics, benchmarking, and configuration recommendations until Hermes core exposes a selector hook. See `docs/hermes-core-selector-hook.patch` for a minimal upstreamable Hermes core patch artifact based on current source inspection.
-
-## Safety model
-
-- `always_include` tools are selected first when present and not already disabled by Hermes.
-- `top_k` applies after `always_include`.
-- `disabled_tools`, `disabled_toolsets`, `include_mcp_tools`, and `include_native_tools` are respected before ranking.
-- `fail_open: true` sends the original schema list on selector errors.
-- `dry_run: true` logs decisions and returns `None` to preserve original behavior.
-- Anthropic Tool Search helpers never defer every tool.
-
-
-## Public release contents
-
-- [`docs/quickstart.md`](docs/quickstart.md): install, dry-run, and activation walkthrough.
-- [`docs/hermes-core-integration.md`](docs/hermes-core-integration.md): required Hermes core selector hook contract.
-- [`docs/hermes-core-selector-hook.patch`](docs/hermes-core-selector-hook.patch): minimal upstreamable Hermes core patch artifact.
-- [`docs/anthropic-tool-search.md`](docs/anthropic-tool-search.md): provider capability notes for Anthropic Tool Search.
-- [`docs/troubleshooting.md`](docs/troubleshooting.md): common operational issues.
-- [`examples/`](examples/): sample config, prompts, schemas, and expected output.
-
-## Release validation
-
-This repository is release-ready only when these checks pass:
+### 5. Auto-expand dictionary via cron (optional)
 
 ```bash
-ruff check .
-mypy src tests
-python -m compileall -q src tests
-pytest -q
-python -m build
+# Dry run — see what would be added
+python /opt/data/hermes-tool-slimmer/expand_aliases.py --dry-run
+
+# Actually expand
+python /opt/data/hermes-tool-slimmer/expand_aliases.py
+
+# Cron (e.g., weekly)
+# 0 3 * * 0 /opt/hermes/.venv/bin/python /opt/data/hermes-tool-slimmer/expand_aliases.py
 ```
 
-When changing the Hermes core patch, also run the validation steps in [`docs/release-checklist.md`](docs/release-checklist.md).
+The script:
+- Reads unmapped Italian tokens logged by the tokenizer
+- Sends them to an LLM (default: deepseek/deepseek-v4-flash via local proxy)
+- Appends new entries to the alias YAML file
+- Reloads the dictionary without restart
+
+Environment variables for the expansion script:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXPAND_ALIASES_API_URL` | `http://127.0.0.1:8421/v1/chat/completions` | LLM API endpoint |
+| `EXPAND_ALIASES_MODEL` | `deepseek/deepseek-v4-flash` | Model for translations |
+| `COMMANDCODE_API_KEY` | (from .env) | API key for the LLM |
+| `TOOL_SLIMMER_ALIASES` | `$HERMES_HOME/tool-slimmer-it-aliases.yaml` | Path to alias dictionary |
+| `TOOL_SLIMMER_ALIASES_DISABLED` | (unset) | Set `1`/`true` to disable alias expansion |
+
+## What's changed from upstream
+
+| Change | Files | Why |
+|--------|-------|-----|
+| Core patch rewritten | `docs/hermes-core-selector-hook.patch` | 4/8 hunks failed on Hermes v0.13.0 |
+| Italian alias expansion | `src/hermes_tool_slimmer/aliases.py` | Italian queries didn't match English tool descriptions |
+| Tokenizer patched | `src/hermes_tool_slimmer/tokenizer.py` | Calls aliases.expand_tokens() on query tokens |
+| Auto-expand script | `expand_aliases.py` | LLM-powered dictionary growth |
+| Alias dictionary | `aliases/it-en.yaml` | 70+ Italian→English mappings |
+| Extra call sites | patch covers lines 10399, 11973, 12019, 14843 | Original patch missed 4 `self.tools` refs |
+
+## Architecture
+
+```
+User message (Italian)
+       │
+       ▼
+  tokenizer.py
+  ├─ Split into tokens
+  ├─ aliases.expand_tokens() → add English equivalents
+  │   "cerca" → ["cerca", "search", "find", "query"]
+  └─ Return expanded token list
+       │
+       ▼
+  selector.py (BM25)
+  ├─ Score each tool schema against expanded tokens
+  ├─ Select top_k (12) by score
+  ├─ Add always_include tools (5)
+  └─ Return filtered schema list
+       │
+       ▼
+  API call with ~17 tools instead of 57
+  Token savings: ~72-99%
+```
+
+## Safety (fail-open)
+
+If anything goes wrong, Hermes works normally with all 57 tools:
+
+- Plugin not installed → no filtering
+- Plugin crashes → all tools pass through
+- Core patch not applied → original code unchanged
+- Alias dictionary missing → tokenization works without expansion
+
+## After Hermes updates
+
+After `hermes update`, re-apply the core patch:
+
+```bash
+cd /opt/hermes
+patch -p1 --dry-run -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selector-hook.patch
+# If dry-run passes:
+patch -p1 -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selector-hook.patch
+```
+
+If the dry-run fails (Hermes code changed significantly), the plugin still works — it just won't filter tools until the patch is updated.
