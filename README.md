@@ -1,11 +1,14 @@
 # hermes-tool-slimmer — Fork Malaga82
 
-Fork of [alias8818/hermes-tool-slimmer](https://github.com/alias8818/hermes-tool-slimmer) with custom patches for:
+Fork of [alias8818/hermes-tool-slimmer](https://github.com/alias8818/hermes-tool-slimmer) v0.2.0 with custom patches for:
 
 1. **Core patch updated for Hermes v0.13.0** — original patch failed 4/8 hunks
 2. **Italian alias expansion** — BM25 tokenizer expands Italian queries to English for better tool matching
 3. **Auto-expanding dictionary** — cron script uses LLM to add new Italian→English mappings
 4. **Extra call sites covered** — 4 external `self.tools` references the original patch missed
+
+[![Tests](https://github.com/alias8818/hermes-tool-slimmer/actions/workflows/tests.yml/badge.svg)](https://github.com/alias8818/hermes-tool-slimmer/actions/workflows/tests.yml)
+![Hermes](https://img.shields.io/badge/Hermes-dashboard%20plugin-111827)
 
 ## Quick Start
 
@@ -75,12 +78,6 @@ python /opt/data/hermes-tool-slimmer/expand_aliases.py
 # 0 3 * * 0 /opt/hermes/.venv/bin/python /opt/data/hermes-tool-slimmer/expand_aliases.py
 ```
 
-The script:
-- Reads unmapped Italian tokens logged by the tokenizer
-- Sends them to an LLM (default: deepseek/deepseek-v4-flash via local proxy)
-- Appends new entries to the alias YAML file
-- Reloads the dictionary without restart
-
 Environment variables for the expansion script:
 
 | Variable | Default | Description |
@@ -90,6 +87,17 @@ Environment variables for the expansion script:
 | `GLM_API_KEY` | (from env) | API key for zai/GLM |
 | `TOOL_SLIMMER_ALIASES` | `$HERMES_HOME/tool-slimmer-it-aliases.yaml` | Path to alias dictionary |
 | `TOOL_SLIMMER_ALIASES_DISABLED` | (unset) | Set `1`/`true` to disable alias expansion |
+
+### 6. Dashboard (from upstream v0.2.0)
+
+Tool Slimmer includes a Hermes dashboard plugin for monitoring selection decisions, schema-token savings, and health status.
+
+```bash
+# Install dashboard plugin
+cp -r dashboard-plugin/tool-slimmer $HERMES_HOME/plugins/
+```
+
+See [`docs/dashboard-plugin.md`](docs/dashboard-plugin.md) for details.
 
 ## What's changed from upstream
 
@@ -101,6 +109,7 @@ Environment variables for the expansion script:
 | Auto-expand script | `expand_aliases.py` | LLM-powered dictionary growth |
 | Alias dictionary | `aliases/it-en.yaml` | 70+ Italian→English mappings |
 | Extra call sites | patch covers lines 10399, 11973, 12019, 14843 | Original patch missed 4 `self.tools` refs |
+| Startup patch checker | `scripts/check-tool-slimmer-patch.py` | Notifies on Discord if patch missing after update |
 
 ## Architecture
 
@@ -124,6 +133,9 @@ User message (Italian)
        ▼
   API call with ~17 tools instead of 57
   Token savings: ~72-99%
+       │
+       ▼
+  metrics.py → decisions.jsonl → Dashboard plugin
 ```
 
 ## Safety (fail-open)
@@ -146,4 +158,4 @@ patch -p1 --dry-run -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selecto
 patch -p1 -f -i /opt/data/hermes-tool-slimmer/docs/hermes-core-selector-hook.patch
 ```
 
-If the dry-run fails (Hermes code changed significantly), the plugin still works — it just won't filter tools until the patch is updated.
+If the dry-run fails (Hermes code changed significantly), the plugin still works — it just won't filter tools until the patch is updated. The startup checker will notify you on Discord.
