@@ -1,9 +1,6 @@
 # Italian → English alias dictionary for tool-slimmer BM25 tokenizer
-# Auto-expanded periodically by expand_aliases.py cron script
+# Auto-expanded periodically by cron job
 # Format: italian_word: english equivalents (space-separated)
-#
-# Location: $HERMES_HOME/tool-slimmer-it-aliases.yaml
-# Override: TOOL_SLIMMER_ALIASES env var
 
 # Core actions
 cerca: search find query
