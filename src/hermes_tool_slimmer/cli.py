@@ -48,6 +48,19 @@ def _load_schemas(path: str | None) -> list[dict[str, Any]]:
     return data or []
 
 
+def _load_prompts(path: str | None) -> list[dict[str, Any]]:
+    if not path:
+        return []
+    target = Path(path).expanduser()
+    if not target.is_file():
+        return []
+    data = yaml.safe_load(target.read_text())
+    if isinstance(data, dict):
+        prompts = data.get("prompts")
+        return prompts if isinstance(prompts, list) else []
+    return data if isinstance(data, list) else []
+
+
 def _tool_names(schemas: list[dict[str, Any]]) -> set[str]:
     return {tool_name(schema) for schema in schemas}
 
@@ -191,7 +204,10 @@ def run_doctor(
 ) -> dict[str, object]:
     checks: dict[str, dict[str, object]] = {}
     cfg: ToolSlimmerConfig | None = None
+    target = Path(config_arg).expanduser() if config_arg else config_path()
     try:
+        if config_arg and not target.is_file():
+            raise FileNotFoundError(str(target))
         cfg = load_config(config_arg)
         checks["config"] = _check("pass", "tool_slimmer config is valid", {"mode": cfg.mode, "top_k": cfg.top_k})
     except Exception as exc:
@@ -205,8 +221,7 @@ def run_doctor(
 
     enabled_detail: object = "config file not found"
     enabled_status = "warn"
-    target = Path(config_arg).expanduser() if config_arg else config_path()
-    if target.exists():
+    if target.is_file():
         try:
             data = yaml.safe_load(target.read_text()) or {}
             enabled = data.get("plugins", {}).get("enabled", []) if isinstance(data, dict) else []
@@ -349,7 +364,7 @@ def handle_cli(args: argparse.Namespace) -> int:
         return 0
     if args.command == "benchmark":
         schemas = _load_schemas(args.schemas)
-        prompts = yaml.safe_load(Path(args.prompts).read_text()).get("prompts", [])
+        prompts = _load_prompts(args.prompts)
         rows = []
         selector = ToolSelector(cfg)
         for prompt in prompts:
@@ -361,7 +376,7 @@ def handle_cli(args: argparse.Namespace) -> int:
         return 0
     if args.command == "eval":
         schemas = _load_schemas(args.schemas)
-        prompts = yaml.safe_load(Path(args.prompts).read_text()).get("prompts", [])
+        prompts = _load_prompts(args.prompts)
         report = eval_prompts(cfg, schemas, prompts)
         print(eval_markdown(report) if getattr(args, "markdown", False) else json.dumps(report, indent=2, sort_keys=True))
         return 0

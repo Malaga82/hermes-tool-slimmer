@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import time
 from collections import Counter
-from typing import Iterable
+from typing import Any, Iterable
 
 from .config import hermes_home
 from .corpus import tool_name
@@ -74,6 +74,20 @@ def read_decisions(limit: int = 200) -> list[dict[str, object]]:
     return events
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_float(value: Any) -> float:
+    try:
+        return float(value or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def summarize_decisions(
     limit: int = 1000,
     *,
@@ -115,30 +129,24 @@ def summarize_decisions(
         context = event.get("context") if isinstance(event, dict) else {}
         if not isinstance(metrics, dict):
             continue
-        before = int(metrics.get("schema_bytes_before") or 0)
-        after = int(metrics.get("schema_bytes_after") or 0)
-        tokens_before = int(metrics.get("approx_tokens_before") or 0)
-        tokens_after = int(metrics.get("approx_tokens_after") or 0)
+        before = _safe_int(metrics.get("schema_bytes_before"))
+        after = _safe_int(metrics.get("schema_bytes_after"))
+        tokens_before = _safe_int(metrics.get("approx_tokens_before"))
+        tokens_after = _safe_int(metrics.get("approx_tokens_after"))
         totals["schema_bytes_before"] += before
         totals["schema_bytes_after"] += after
         totals["schema_bytes_saved"] += max(0, before - after)
         totals["approx_tokens_before"] += tokens_before
         totals["approx_tokens_after"] += tokens_after
         totals["approx_tokens_saved"] += max(0, tokens_before - tokens_after)
-        totals["selected_tools"] += int(metrics.get("selected_tools") or 0)
-        totals["total_tools"] += int(metrics.get("total_tools") or 0)
-        try:
-            if metrics.get("selection_ms") is not None:
-                totals["selection_ms"] += float(metrics.get("selection_ms") or 0.0)
-                totals["selection_ms_events"] += 1
-        except (TypeError, ValueError):
-            pass
+        totals["selected_tools"] += _safe_int(metrics.get("selected_tools"))
+        totals["total_tools"] += _safe_int(metrics.get("total_tools"))
+        if metrics.get("selection_ms") is not None:
+            totals["selection_ms"] += _safe_float(metrics.get("selection_ms"))
+            totals["selection_ms_events"] += 1
         if metrics.get("skipped"):
             totals["skipped_events"] += 1
-        try:
-            reductions.append(float(metrics.get("estimated_reduction_percent") or 0.0))
-        except (TypeError, ValueError):
-            pass
+        reductions.append(_safe_float(metrics.get("estimated_reduction_percent")))
         mode = metrics.get("mode")
         if mode:
             modes[str(mode)] += 1
@@ -149,8 +157,10 @@ def summarize_decisions(
                 providers[str(provider)] += 1
             if platform:
                 platforms[str(platform)] += 1
-        for name in metrics.get("selected") or []:
-            selected[str(name)] += 1
+        selected_names = metrics.get("selected")
+        if isinstance(selected_names, list):
+            for name in selected_names:
+                selected[str(name)] += 1
 
     avg_reduction = round(sum(reductions) / len(reductions), 1) if reductions else 0.0
     avg_selected = round(totals["selected_tools"] / totals["events"], 1) if totals["events"] else 0.0

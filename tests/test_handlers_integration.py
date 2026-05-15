@@ -118,6 +118,26 @@ def test_cli_analyze_config_and_eval(tmp_path, capsys):
     assert "metrics" in out["event_fields"]
 
 
+def test_cli_eval_handles_non_yaml_prompt_payload(tmp_path, capsys):
+    from argparse import Namespace
+    from hermes_tool_slimmer.cli import handle_cli
+
+    prompts = tmp_path / "prompts.yaml"
+    prompts.write_text("plain string")
+
+    assert handle_cli(Namespace(command="eval", config=None, schemas=None, prompts=str(prompts), markdown=False)) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["summary"]["prompts"] == 0
+
+
+def test_doctor_reports_missing_explicit_config_as_failure(tmp_path):
+    from hermes_tool_slimmer.cli import run_doctor
+
+    result = run_doctor(str(tmp_path / "missing.yaml"))
+    assert result["ok"] is False
+    assert result["checks"]["config"]["status"] == "fail"
+
+
 def test_integration_contract_returns_none_when_disabled():
     out = select_tool_schemas_callback("read", [], [{"name": "read_file"}], "model", "platform", config=ToolSlimmerConfig(enabled=False))
     assert out is None

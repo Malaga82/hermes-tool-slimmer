@@ -52,6 +52,13 @@ def test_config_invalid_top_k():
         ToolSlimmerConfig.from_mapping({"top_k": -1})
 
 
+def test_config_rejects_nan_numeric_fields():
+    with pytest.raises(ValueError, match="top_k"):
+        ToolSlimmerConfig.from_mapping({"top_k": float("nan")})
+    with pytest.raises(ValueError, match="min_estimated_reduction_percent"):
+        ToolSlimmerConfig.from_mapping({"min_estimated_reduction_percent": float("nan")})
+
+
 def test_load_config_reads_tool_slimmer_section(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({"tool_slimmer": {"mode": "eager", "top_k": 0}}))

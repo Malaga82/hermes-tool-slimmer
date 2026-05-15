@@ -1,7 +1,7 @@
 from hermes_tool_slimmer.anthropic_tool_search import apply_defer_loading, tool_search_tool
 from hermes_tool_slimmer.config import ToolSlimmerConfig
 from hermes_tool_slimmer.index_store import IndexStore
-from hermes_tool_slimmer.metrics import reduction_metrics, schema_bytes
+from hermes_tool_slimmer.metrics import reduction_metrics, schema_bytes, summarize_decisions
 from hermes_tool_slimmer.toolsets import schema_origin
 
 
@@ -52,6 +52,20 @@ def test_metrics_estimate_reduction():
 
 def test_schema_bytes_tolerates_non_json_values():
     assert schema_bytes([{"fn": lambda: None}]) > 0
+
+
+def test_summarize_decisions_tolerates_bad_metric_types(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    log = tmp_path / "tool-slimmer" / "decisions.jsonl"
+    log.parent.mkdir()
+    log.write_text(
+        '{"metrics":{"schema_bytes_before":"bad","schema_bytes_after":"bad","approx_tokens_before":"bad","approx_tokens_after":"bad","selected_tools":"bad","total_tools":"bad","selection_ms":"bad","estimated_reduction_percent":"bad","selected":"not-list"},"context":{}}\n'
+    )
+
+    summary = summarize_decisions()
+    assert summary["totals"]["events"] == 1
+    assert summary["totals"]["schema_bytes_before"] == 0
+    assert summary["averages"]["selection_ms"] == 0.0
 
 
 def test_schema_origin_tolerates_null_function_wrapper():

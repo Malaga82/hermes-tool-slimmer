@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -53,10 +54,16 @@ class ToolSlimmerConfig:
     def validate(self) -> None:
         if self.mode not in VALID_MODES:
             raise ValueError(f"Invalid tool_slimmer.mode {self.mode!r}; expected one of {sorted(VALID_MODES)}")
+        if not isinstance(self.top_k, int) or isinstance(self.top_k, bool) or not math.isfinite(self.top_k):
+            raise ValueError("tool_slimmer.top_k must be a finite integer")
         if self.top_k < 0:
             raise ValueError("tool_slimmer.top_k must be >= 0")
+        if not isinstance(self.min_total_tools, int) or isinstance(self.min_total_tools, bool) or not math.isfinite(self.min_total_tools):
+            raise ValueError("tool_slimmer.min_total_tools must be a finite integer")
         if self.min_total_tools < 0:
             raise ValueError("tool_slimmer.min_total_tools must be >= 0")
+        if not isinstance(self.min_estimated_reduction_percent, (int, float)) or isinstance(self.min_estimated_reduction_percent, bool) or not math.isfinite(self.min_estimated_reduction_percent):
+            raise ValueError("tool_slimmer.min_estimated_reduction_percent must be finite")
         if self.min_estimated_reduction_percent < 0:
             raise ValueError("tool_slimmer.min_estimated_reduction_percent must be >= 0")
 
