@@ -21,6 +21,8 @@ def approx_tokens(byte_count: int) -> int:
 def reduction_metrics(mode: str, original: list[Schema], selected: list[Schema], always_included: list[str] | None = None) -> dict[str, object]:
     before = schema_bytes(original)
     after = schema_bytes(selected)
+    before_tokens = approx_tokens(before)
+    after_tokens = approx_tokens(after)
     reduction = 0.0 if before == 0 else round(((before - after) / before) * 100, 1)
     return {
         "mode": mode,
@@ -28,8 +30,10 @@ def reduction_metrics(mode: str, original: list[Schema], selected: list[Schema],
         "selected_tools": len(selected),
         "schema_bytes_before": before,
         "schema_bytes_after": after,
-        "approx_tokens_before": approx_tokens(before),
-        "approx_tokens_after": approx_tokens(after),
+        "schema_bytes_saved": max(0, before - after),
+        "approx_tokens_before": before_tokens,
+        "approx_tokens_after": after_tokens,
+        "approx_tokens_saved": max(0, before_tokens - after_tokens),
         "estimated_reduction_percent": reduction,
         "always_included": always_included or [],
         "selected": [tool_name(schema) for schema in selected],
@@ -96,6 +100,9 @@ def summarize_decisions(
         "approx_tokens_saved": 0,
         "selected_tools": 0,
         "total_tools": 0,
+        "selection_ms": 0.0,
+        "selection_ms_events": 0,
+        "skipped_events": 0,
     }
     modes: Counter[str] = Counter()
     providers: Counter[str] = Counter()
@@ -121,6 +128,14 @@ def summarize_decisions(
         totals["selected_tools"] += int(metrics.get("selected_tools") or 0)
         totals["total_tools"] += int(metrics.get("total_tools") or 0)
         try:
+            if metrics.get("selection_ms") is not None:
+                totals["selection_ms"] += float(metrics.get("selection_ms") or 0.0)
+                totals["selection_ms_events"] += 1
+        except (TypeError, ValueError):
+            pass
+        if metrics.get("skipped"):
+            totals["skipped_events"] += 1
+        try:
             reductions.append(float(metrics.get("estimated_reduction_percent") or 0.0))
         except (TypeError, ValueError):
             pass
@@ -140,6 +155,8 @@ def summarize_decisions(
     avg_reduction = round(sum(reductions) / len(reductions), 1) if reductions else 0.0
     avg_selected = round(totals["selected_tools"] / totals["events"], 1) if totals["events"] else 0.0
     avg_total = round(totals["total_tools"] / totals["events"], 1) if totals["events"] else 0.0
+    avg_selection_ms = round(float(totals["selection_ms"]) / totals["selection_ms_events"], 3) if totals["selection_ms_events"] else 0.0
+    totals["selection_ms"] = round(float(totals["selection_ms"]), 3)
     return {
         "log_path": decision_log_path(),
         "ignored_events": ignored_events,
@@ -150,6 +167,7 @@ def summarize_decisions(
             "reduction_percent": avg_reduction,
             "selected_tools": avg_selected,
             "total_tools": avg_total,
+            "selection_ms": avg_selection_ms,
         },
         "modes": dict(modes.most_common()),
         "providers": dict(providers.most_common()),

@@ -204,7 +204,7 @@ def handle_cli(args: argparse.Namespace) -> int:
         print(json.dumps({"benchmarks": rows}, indent=2))
         return 0
     if args.command == "recommend-config":
-        print(yaml.safe_dump({"tool_slimmer": {"enabled": True, "mode": "keyword", "top_k": 8, "always_include": cfg.always_include, "fail_open": True, "dry_run": False}}, sort_keys=False))
+        print(yaml.safe_dump({"tool_slimmer": {"enabled": True, "mode": "keyword", "top_k": 8, "always_include": cfg.always_include, "min_total_tools": cfg.min_total_tools, "min_estimated_reduction_percent": cfg.min_estimated_reduction_percent, "fail_open": True, "dry_run": False}}, sort_keys=False))
         return 0
     raise ValueError(f"Unknown command {args.command}")
 

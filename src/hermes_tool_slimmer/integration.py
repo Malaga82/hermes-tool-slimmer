@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from typing import Any
 
 from .anthropic_tool_search import maybe_anthropic_tools
@@ -27,6 +28,31 @@ def select_tool_schemas_callback(
     if not cfg.enabled:
         return None
     try:
+        started = perf_counter()
+        if len(schemas) < cfg.min_total_tools:
+            metrics = reduction_metrics(cfg.mode, schemas, schemas, [])
+            metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+            metrics["skipped"] = True
+            metrics["skip_reason"] = "below_min_total_tools"
+            metrics["min_total_tools"] = cfg.min_total_tools
+            if cfg.log_decisions:
+                LOG.info("tool-slimmer skipped", extra={"tool_slimmer": metrics})
+                try:
+                    record_decision(
+                        metrics,
+                        {
+                            "provider": provider,
+                            "model": model,
+                            "platform": platform,
+                            "session_id": session_id,
+                            "dry_run": cfg.dry_run,
+                            "schema_count": len(schemas),
+                        },
+                    )
+                except Exception as exc:
+                    LOG.warning("tool-slimmer decision logging failed: %s", exc)
+            return None
+
         effective_cfg = cfg
         result = ToolSelector(effective_cfg).select(
             user_message,
@@ -65,6 +91,16 @@ def select_tool_schemas_callback(
             selected = result.selected
             effective_cfg = fallback_cfg
         metrics = reduction_metrics(effective_cfg.mode, schemas, selected, result.always_included)
+        metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+        raw_reduction = metrics["estimated_reduction_percent"]
+        reduction_percent = raw_reduction if isinstance(raw_reduction, (int, float)) else 0.0
+        if reduction_percent < cfg.min_estimated_reduction_percent:
+            selected = schemas
+            metrics = reduction_metrics(effective_cfg.mode, schemas, selected, result.always_included)
+            metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+            metrics["skipped"] = True
+            metrics["skip_reason"] = "below_min_estimated_reduction_percent"
+            metrics["min_estimated_reduction_percent"] = cfg.min_estimated_reduction_percent
         if cfg.log_decisions:
             LOG.info("tool-slimmer selection", extra={"tool_slimmer": metrics})
             try:

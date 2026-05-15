@@ -53,7 +53,7 @@ def test_selector_records_decision_metrics(monkeypatch, tmp_path):
         "dashboard",
         provider="test-provider",
         session_id="session-1",
-        config=ToolSlimmerConfig(top_k=1, always_include=[]),
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0),
     )
     assert out == [schemas[1]]
 
@@ -61,6 +61,7 @@ def test_selector_records_decision_metrics(monkeypatch, tmp_path):
     assert len(events) == 1
     assert events[0]["context"]["provider"] == "test-provider"
     assert events[0]["metrics"]["selected"] == ["search_files"]
+    assert events[0]["metrics"]["approx_tokens_saved"] > 0
     summary = summarize_decisions()
     assert summary["totals"]["events"] == 1
     assert summary["totals"]["approx_tokens_saved"] > 0
@@ -79,7 +80,7 @@ def test_summary_can_exclude_no_session_probe_events(monkeypatch, tmp_path):
         schemas,
         "model",
         "test",
-        config=ToolSlimmerConfig(top_k=1, always_include=[]),
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0),
     )
     select_tool_schemas_callback(
         "search",
@@ -88,7 +89,7 @@ def test_summary_can_exclude_no_session_probe_events(monkeypatch, tmp_path):
         "model",
         "tui",
         session_id="session-1",
-        config=ToolSlimmerConfig(top_k=1, always_include=[]),
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0),
     )
 
     all_events = summarize_decisions()
@@ -116,9 +117,62 @@ def test_anthropic_mode_falls_back_to_keyword_for_openrouter():
             top_k=1,
             always_include=[],
             log_decisions=False,
+            min_total_tools=0,
         ),
     )
     assert out == [schemas[1]]
+
+
+def test_selector_skips_small_catalogs_before_ranking(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    schemas = [
+        {"name": "read_file", "description": "Read files"},
+        {"name": "search_files", "description": "Search files"},
+    ]
+    out = select_tool_schemas_callback(
+        "search",
+        [],
+        schemas,
+        "model",
+        "cron",
+        session_id="cron-1",
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=20),
+    )
+
+    assert out is None
+    event = read_decisions()[0]
+    assert event["metrics"]["skipped"] is True
+    assert event["metrics"]["skip_reason"] == "below_min_total_tools"
+    assert event["metrics"]["selection_ms"] >= 0
+
+
+def test_selector_skips_low_reduction_results(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    schemas = [
+        {"name": "read_file", "description": "Read files"},
+        {"name": "search_files", "description": "Search files"},
+        {"name": "terminal", "description": "Run commands"},
+    ]
+    out = select_tool_schemas_callback(
+        "search",
+        [],
+        schemas,
+        "model",
+        "cron",
+        session_id="cron-1",
+        config=ToolSlimmerConfig(
+            top_k=1,
+            always_include=["read_file", "search_files", "terminal"],
+            min_total_tools=0,
+            min_estimated_reduction_percent=99,
+        ),
+    )
+
+    assert out == schemas
+    event = read_decisions()[0]
+    assert event["metrics"]["skipped"] is True
+    assert event["metrics"]["skip_reason"] == "below_min_estimated_reduction_percent"
+    assert summarize_decisions(require_session=True)["totals"]["skipped_events"] == 1
 
 
 def test_pre_llm_and_selector_hooks_registered():
@@ -190,7 +244,7 @@ def test_dashboard_plugin_api_reports_status_and_summary(monkeypatch, tmp_path):
         [{"name": "read_file", "description": "Read files"}, {"name": "terminal", "description": "Run commands"}],
         "model",
         "dashboard",
-        config=ToolSlimmerConfig(top_k=1, always_include=[]),
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0),
     )
 
     plugin_path = Path(__file__).resolve().parents[1] / "dashboard-plugin" / "tool-slimmer" / "dashboard" / "plugin_api.py"
@@ -205,6 +259,17 @@ def test_dashboard_plugin_api_reports_status_and_summary(monkeypatch, tmp_path):
         status = client.get("/status")
         summary = client.get("/summary")
         events = client.get("/events?limit=1")
+        index_before = client.get("/index")
+        rebuilt = client.post(
+            "/index/rebuild",
+            json={
+                "schemas": [
+                    {"name": "read_file", "description": "Read files"},
+                    {"name": "terminal", "description": "Run commands"},
+                ],
+            },
+        )
+        index_after = client.get("/index")
 
     assert status.status_code == 200
     assert status.json()["config"]["enabled"] is True
@@ -212,3 +277,10 @@ def test_dashboard_plugin_api_reports_status_and_summary(monkeypatch, tmp_path):
     assert summary.json()["summary"]["totals"]["events"] == 1
     assert summary.json()["all_summary"]["totals"]["events"] == 1
     assert events.json()["events"][0]["metrics"]["selected"] == ["read_file"]
+    assert index_before.status_code == 200
+    assert index_before.json()["index"]["exists"] is False
+    assert rebuilt.status_code == 200
+    assert rebuilt.json()["source"] == "payload"
+    assert rebuilt.json()["index"]["total_tools"] == 2
+    assert index_after.json()["index"]["exists"] is True
+    assert index_after.json()["index"]["documents"][0]["name"] == "read_file"

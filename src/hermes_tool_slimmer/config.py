@@ -34,6 +34,8 @@ class ToolSlimmerConfig:
     log_decisions: bool = True
     fail_open: bool = True
     dry_run: bool = False
+    min_total_tools: int = 20
+    min_estimated_reduction_percent: float = 5.0
     anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
 
     @classmethod
@@ -50,6 +52,10 @@ class ToolSlimmerConfig:
             raise ValueError(f"Invalid tool_slimmer.mode {self.mode!r}; expected one of {sorted(VALID_MODES)}")
         if self.top_k < 0:
             raise ValueError("tool_slimmer.top_k must be >= 0")
+        if self.min_total_tools < 0:
+            raise ValueError("tool_slimmer.min_total_tools must be >= 0")
+        if self.min_estimated_reduction_percent < 0:
+            raise ValueError("tool_slimmer.min_estimated_reduction_percent must be >= 0")
 
 
 def hermes_home() -> Path:

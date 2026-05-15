@@ -10,6 +10,12 @@ The dashboard headline excludes probe/test events that do not have a Hermes `ses
 
 Run `hermes tool-slimmer doctor`. If the core selector hook is unavailable, Hermes Tool Slimmer can benchmark and log dry-run decisions but cannot replace schemas sent to providers.
 
+Also check `tool_slimmer.min_total_tools` and `tool_slimmer.min_estimated_reduction_percent`. By default, Tool Slimmer skips catalogs with fewer than 20 tools and skips ranked selections under 5% estimated schema reduction. This is intentional for cron/small-toolset paths where the overhead is not worth the tiny savings.
+
+## Tool index looks stale
+
+Open the Tool Slimmer dashboard page and click **Rebuild From Hermes Tools**. The card shows the index path, count, checksum, and last-updated time. The live selector still ranks the current request's tool schemas in memory, so a stale persisted index affects visibility and troubleshooting, not request-time safety.
+
 ## A required tool is missing
 
 Add it to `tool_slimmer.always_include` or increase `top_k`. The selector never resurrects tools that Hermes already disabled.

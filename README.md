@@ -34,6 +34,8 @@ That handles the package install, dashboard plugin copy, Hermes plugin enablemen
 
 For a guided setup, see [`docs/quickstart.md`](docs/quickstart.md). For the Hermes dashboard page, see [`docs/dashboard-plugin.md`](docs/dashboard-plugin.md).
 
+The dashboard includes a **Tool Index** panel with a one-click **Rebuild From Hermes Tools** action, indexed-tool preview, path, checksum, and last-updated time. The persisted index is for inspection and troubleshooting; live slimming ranks the current request's Hermes schemas in memory.
+
 For a plain-English health report:
 
 ```bash
@@ -73,6 +75,8 @@ tool_slimmer:
   include_mcp_tools: true
   include_native_tools: true
   log_decisions: true
+  min_total_tools: 20
+  min_estimated_reduction_percent: 5.0
   fail_open: true      # selector errors preserve the original full schema list
   dry_run: false       # true logs/injects diagnostics but does not alter schemas
 ```
@@ -123,6 +127,8 @@ If none exists, the plugin does not monkeypatch provider internals. It remains u
 - `always_include` tools are selected first when present and not already disabled by Hermes.
 - `top_k` applies after `always_include`.
 - `disabled_tools`, `disabled_toolsets`, `include_mcp_tools`, and `include_native_tools` are respected before ranking.
+- `min_total_tools` skips small catalogs before ranking; this keeps cron/small-toolset overhead near zero when there is little to save.
+- `min_estimated_reduction_percent` fails open after ranking if the estimated schema reduction is too small to justify altering the request.
 - `fail_open: true` sends the original schema list on selector errors.
 - `dry_run: true` logs decisions and returns `None` to preserve original behavior.
 - Anthropic Tool Search helpers never defer every tool.

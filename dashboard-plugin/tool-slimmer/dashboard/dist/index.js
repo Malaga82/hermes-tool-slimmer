@@ -15,6 +15,15 @@
     return new Date(Number(timestamp) * 1000).toLocaleString();
   }
 
+  function fmtIndexTime(timestamp) {
+    if (!timestamp) return "Never rebuilt";
+    return new Date(Number(timestamp) * 1000).toLocaleString();
+  }
+
+  function shortChecksum(value) {
+    return value ? String(value).slice(0, 12) : "none";
+  }
+
   function Metric({ label, value, detail }) {
     return React.createElement("div", { className: "tool-slimmer-metric" },
       React.createElement("div", { className: "tool-slimmer-metric-label" }, label),
@@ -35,15 +44,16 @@
   }
 
   function useToolSlimmerData() {
-    const [state, setState] = useState({ loading: true, error: null, status: null, summary: null });
+    const [state, setState] = useState({ loading: true, error: null, status: null, summary: null, indexInfo: null });
 
     function load() {
       setState(function (prev) { return Object.assign({}, prev, { loading: true, error: null }); });
       Promise.all([
         SDK.fetchJSON("/api/plugins/tool-slimmer/status"),
         SDK.fetchJSON("/api/plugins/tool-slimmer/summary?limit=1000"),
+        SDK.fetchJSON("/api/plugins/tool-slimmer/index"),
       ]).then(function (results) {
-        setState({ loading: false, error: null, status: results[0], summary: results[1].summary });
+        setState({ loading: false, error: null, status: results[0], summary: results[1].summary, indexInfo: results[2].index });
       }).catch(function (error) {
         setState(function (prev) {
           return Object.assign({}, prev, { loading: false, error: error && error.message ? error.message : "LOAD_FAILED" });
@@ -60,17 +70,40 @@
 
   function ToolSlimmerPage() {
     const data = useToolSlimmerData();
+    const [indexBusy, setIndexBusy] = useState(false);
+    const [indexMessage, setIndexMessage] = useState(null);
     const summary = data.summary || {};
     const totals = summary.totals || {};
     const averages = summary.averages || {};
     const config = (data.status && data.status.config) || {};
-    const index = (data.status && data.status.index) || {};
+    const statusIndex = (data.status && data.status.index) || {};
+    const index = data.indexInfo || statusIndex || {};
     const doctor = (data.status && data.status.doctor && data.status.doctor.checks) || {};
     const recent = summary.recent || [];
+    const indexDocs = index.documents || [];
 
     const topTools = useMemo(function () {
       return Object.entries(summary.top_selected_tools || {}).slice(0, 10);
     }, [summary.top_selected_tools]);
+
+    function rebuildIndex() {
+      setIndexBusy(true);
+      setIndexMessage(null);
+      SDK.fetchJSON("/api/plugins/tool-slimmer/index/rebuild", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      }).then(function (result) {
+        const rebuilt = result.index || {};
+        setIndexMessage("Indexed " + String(rebuilt.total_tools || 0) + " tools from " + String(result.source || "Hermes") + ".");
+        data.reload();
+      }).catch(function (error) {
+        const message = error && error.message ? error.message : "Index rebuild failed";
+        setIndexMessage(message);
+      }).finally(function () {
+        setIndexBusy(false);
+      });
+    }
 
     return React.createElement("div", { className: "tool-slimmer-page flex flex-col gap-6" },
       React.createElement("div", { className: "flex flex-wrap items-center justify-between gap-3" },
@@ -112,6 +145,11 @@
           value: fmtNumber(totals.events),
           detail: String(summary.ignored_events || 0) + " probe events excluded",
         }),
+        React.createElement(Metric, {
+          label: "Selector Overhead",
+          value: Number(averages.selection_ms || 0).toFixed(2) + " ms",
+          detail: fmtNumber(totals.skipped_events || 0) + " low-value selections skipped",
+        }),
       ),
 
       React.createElement(Card, null,
@@ -135,11 +173,19 @@
             ),
             React.createElement("div", { className: "flex justify-between gap-3" },
               React.createElement("span", { className: "tool-slimmer-muted" }, "Indexed Tools"),
-              React.createElement("span", { className: "font-courier" }, String(index.total_tools || 0)),
+              React.createElement("span", { className: "font-courier" }, String(statusIndex.total_tools || index.total_tools || 0)),
             ),
             React.createElement("div", { className: "flex justify-between gap-3" },
               React.createElement("span", { className: "tool-slimmer-muted" }, "Decision Logging"),
               React.createElement("span", { className: "font-courier" }, config.log_decisions ? "on" : "off"),
+            ),
+            React.createElement("div", { className: "flex justify-between gap-3" },
+              React.createElement("span", { className: "tool-slimmer-muted" }, "Minimum Tools"),
+              React.createElement("span", { className: "font-courier" }, String(config.min_total_tools ?? 0)),
+            ),
+            React.createElement("div", { className: "flex justify-between gap-3" },
+              React.createElement("span", { className: "tool-slimmer-muted" }, "Minimum Reduction"),
+              React.createElement("span", { className: "font-courier" }, String(config.min_estimated_reduction_percent ?? 0) + "%"),
             ),
           ),
         ),
@@ -157,6 +203,51 @@
               );
             }),
           ),
+        ),
+      ),
+
+      React.createElement(Card, null,
+        React.createElement(CardHeader, { className: "flex flex-row items-center justify-between gap-3" },
+          React.createElement(CardTitle, null, "Tool Index"),
+          React.createElement("div", { className: "flex items-center gap-2" },
+            React.createElement(Button, { variant: "outline", onClick: data.reload, disabled: data.loading || indexBusy }, "Refresh"),
+            React.createElement(Button, { onClick: rebuildIndex, disabled: indexBusy }, indexBusy ? "Rebuilding" : "Rebuild From Hermes Tools"),
+          ),
+        ),
+        React.createElement(CardContent, { className: "grid gap-4 text-sm" },
+          React.createElement("div", { className: "tool-slimmer-index-grid" },
+            React.createElement("div", null,
+              React.createElement("div", { className: "tool-slimmer-muted text-xs" }, "Status"),
+              React.createElement("div", { className: "font-medium" }, index.exists ? "Ready" : "Not built"),
+            ),
+            React.createElement("div", null,
+              React.createElement("div", { className: "tool-slimmer-muted text-xs" }, "Tools"),
+              React.createElement("div", { className: "font-medium" }, String(index.total_tools || 0)),
+            ),
+            React.createElement("div", null,
+              React.createElement("div", { className: "tool-slimmer-muted text-xs" }, "Updated"),
+              React.createElement("div", { className: "font-medium" }, fmtIndexTime(index.updated_at)),
+            ),
+            React.createElement("div", null,
+              React.createElement("div", { className: "tool-slimmer-muted text-xs" }, "Checksum"),
+              React.createElement("div", { className: "font-courier" }, shortChecksum(index.checksum)),
+            ),
+          ),
+          React.createElement("div", { className: "tool-slimmer-path" }, index.path || "No index path available"),
+          React.createElement("div", { className: "tool-slimmer-muted text-xs" },
+            index.live_selection && index.live_selection.message
+              ? index.live_selection.message
+              : "Hermes selection ranks the live request tool schemas in memory; the persisted index is for inspection, audits, and troubleshooting.",
+          ),
+          indexMessage && React.createElement("div", { className: "tool-slimmer-muted text-xs" }, indexMessage),
+          indexDocs.length === 0
+            ? React.createElement("div", { className: "tool-slimmer-muted text-sm" }, "No indexed tools to preview yet.")
+            : React.createElement("div", { className: "tool-slimmer-tools" },
+                indexDocs.slice(0, 18).map(function (doc) {
+                  const label = doc.toolset ? doc.toolset + "." + doc.name : doc.name;
+                  return React.createElement("span", { key: label, className: "tool-slimmer-pill" }, label + " " + String(doc.token_count || 0));
+                }),
+              ),
         ),
       ),
 
@@ -192,7 +283,10 @@
                 return React.createElement("tr", { key: String(event.timestamp || idx) },
                   React.createElement("td", null, fmtTime(event.timestamp)),
                   React.createElement("td", { className: "font-courier" }, metrics.mode || "unknown"),
-                  React.createElement("td", null, String(metrics.estimated_reduction_percent || 0) + "%"),
+                  React.createElement("td", null,
+                    String(metrics.estimated_reduction_percent || 0) + "%",
+                    metrics.skipped && React.createElement("div", { className: "tool-slimmer-muted text-xs" }, metrics.skip_reason || "skipped"),
+                  ),
                   React.createElement("td", null, String(metrics.selected_tools || 0), " / ", String(metrics.total_tools || 0)),
                   React.createElement("td", null, React.createElement(ToolPills, { tools: metrics.selected || [] })),
                 );
