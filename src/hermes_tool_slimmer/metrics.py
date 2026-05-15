@@ -11,7 +11,7 @@ from .types import Schema
 
 
 def schema_bytes(schemas: Iterable[Schema]) -> int:
-    return len(json.dumps(list(schemas), sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    return len(json.dumps(list(schemas), sort_keys=True, default=str, separators=(",", ":")).encode("utf-8"))
 
 
 def approx_tokens(byte_count: int) -> int:

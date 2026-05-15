@@ -11,6 +11,7 @@ import yaml
 
 from .anthropic_tool_search import supports_anthropic_tool_search
 from .config import ToolSlimmerConfig, config_path, load_config
+from .corpus import tool_name
 from .index_store import IndexStore
 from .metrics import reduction_metrics
 from .selector import ToolSelector
@@ -26,7 +27,7 @@ def _load_schemas(path: str | None) -> list[dict[str, Any]]:
 
 
 def _tool_names(schemas: list[dict[str, Any]]) -> set[str]:
-    return {str(s.get("name") or s.get("function", {}).get("name") or "") for s in schemas}
+    return {tool_name(schema) for schema in schemas}
 
 
 def _check(status: str, message: str, detail: object | None = None) -> dict[str, object]:

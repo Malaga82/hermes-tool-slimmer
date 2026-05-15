@@ -1,7 +1,8 @@
 from hermes_tool_slimmer.anthropic_tool_search import apply_defer_loading, tool_search_tool
 from hermes_tool_slimmer.config import ToolSlimmerConfig
 from hermes_tool_slimmer.index_store import IndexStore
-from hermes_tool_slimmer.metrics import reduction_metrics
+from hermes_tool_slimmer.metrics import reduction_metrics, schema_bytes
+from hermes_tool_slimmer.toolsets import schema_origin
 
 
 def test_index_rebuilds_on_schema_checksum_change(tmp_path):
@@ -41,6 +42,14 @@ def test_metrics_estimate_reduction():
     metrics = reduction_metrics("keyword", original, selected, ["a"])
     assert metrics["schema_bytes_after"] < metrics["schema_bytes_before"]
     assert metrics["estimated_reduction_percent"] > 0
+
+
+def test_schema_bytes_tolerates_non_json_values():
+    assert schema_bytes([{"fn": lambda: None}]) > 0
+
+
+def test_schema_origin_tolerates_null_function_wrapper():
+    assert schema_origin({"function": None}) == "native"
 
 
 def test_anthropic_defer_never_defers_all_tools():

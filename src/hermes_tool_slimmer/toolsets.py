@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from .corpus import tool_name
 
-def schema_origin(schema: dict[str, Any]) -> str:
+
+def schema_origin(schema: dict[str, Any] | object) -> str:
     """Classify a Hermes tool schema as `mcp` or `native` from known metadata/name shapes."""
+    if not isinstance(schema, dict):
+        return "native"
     for key in ("toolset", "tool_set", "namespace"):
         value = str(schema.get(key) or "").lower()
         if value in {"mcp", "mcp_tools"} or value.startswith(("mcp:", "mcp-")):
@@ -14,7 +18,7 @@ def schema_origin(schema: dict[str, Any]) -> str:
     # Hermes MCP tools are registered into toolsets named mcp-{server}, and
     # converted MCP schema names are prefixed mcp_{server}_{tool}.
     server = str(schema.get("server") or "").lower()
-    name = str(schema.get("name") or schema.get("function", {}).get("name") or "").lower()
+    name = tool_name(schema).lower()
     if server or name.startswith("mcp_"):
         return "mcp"
     return "native"
@@ -25,5 +29,5 @@ def is_mcp_toolset(toolset: str | None) -> bool:
     return value in {"mcp", "mcp_tools"} or value.startswith(("mcp:", "mcp-"))
 
 
-def is_mcp_schema(schema: dict[str, Any]) -> bool:
+def is_mcp_schema(schema: dict[str, Any] | object) -> bool:
     return schema_origin(schema) == "mcp"

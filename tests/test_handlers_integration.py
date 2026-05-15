@@ -6,6 +6,7 @@ import pytest
 
 from hermes_tool_slimmer.commands import handle_slash_command
 from hermes_tool_slimmer.config import ToolSlimmerConfig
+from hermes_tool_slimmer.cli import _tool_names
 from hermes_tool_slimmer.integration import maybe_register_selector_hook, select_tool_schemas_callback
 from hermes_tool_slimmer.metrics import read_decisions, summarize_decisions
 from hermes_tool_slimmer.tools import tool_slimmer_select, tool_slimmer_status
@@ -39,6 +40,10 @@ def test_tool_slimmer_select_honors_mode_override(monkeypatch, tmp_path):
     assert result["ok"] is True
     assert result["mode"] == "eager"
     assert result["selected"] == ["read_file", "search_files"]
+
+
+def test_cli_tool_names_tolerates_null_function_wrapper():
+    assert _tool_names([{"function": None}]) == {""}
 
 
 def test_integration_contract_returns_none_when_disabled():

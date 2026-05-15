@@ -111,7 +111,8 @@ class ToolSelector:
         query = set(query_tokens)
         boost = 0.0
         normalized_name = doc.name.lower()
-        if normalized_name in " ".join(query_tokens) or normalized_name.replace("_", " ") in " ".join(query_tokens):
+        query_text = " ".join(query_tokens)
+        if len(normalized_name) >= 2 and (normalized_name in query_text or normalized_name.replace("_", " ") in query_text):
             boost += 10.0
         if doc.toolset and set(tokenize(doc.toolset)) & query:
             boost += 2.5

@@ -54,6 +54,17 @@ def test_exact_tool_name_boost_selects_named_tool():
     assert result.selected_names == ["github_search_code"]
 
 
+def test_single_character_tool_name_does_not_get_substring_boost():
+    cfg = ToolSlimmerConfig(top_k=1, always_include=[])
+    schemas = [
+        {"name": "a", "description": "single letter"},
+        {"name": "search_tool", "description": "Search things"},
+    ]
+    result = ToolSelector(cfg).select("search", schemas)
+    assert result.selected_names == ["search_tool"]
+    assert result.scores["a"] < result.scores["search_tool"]
+
+
 def test_selector_respects_include_mcp_tools_flag():
     cfg = ToolSlimmerConfig(top_k=5, always_include=[], include_mcp_tools=False)
     schemas = [*SCHEMAS, {"name": "mcp_read_issue", "toolset": "mcp", "description": "Read MCP issue"}]
