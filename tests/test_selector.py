@@ -1,5 +1,6 @@
 from hermes_tool_slimmer.config import ToolSlimmerConfig
 from hermes_tool_slimmer.selector import ToolSelector
+import pytest
 
 
 SCHEMAS = [
@@ -71,3 +72,52 @@ def test_selector_respects_include_mcp_tools_for_plain_server_metadata():
     schemas = [*SCHEMAS, {"name": "issue_read", "server": "github", "description": "Read issue"}]
     result = ToolSelector(cfg).select("read github issue", schemas)
     assert "issue_read" not in result.selected_names
+
+
+def test_empty_query_fails_open_instead_of_arbitrary_tool():
+    cfg = ToolSlimmerConfig(top_k=1, always_include=[])
+    result = ToolSelector(cfg).select("", SCHEMAS)
+    assert result.fail_open is True
+    assert result.reason == "no_relevant_match"
+    assert result.selected == SCHEMAS
+
+
+def test_no_match_keeps_always_include_only():
+    cfg = ToolSlimmerConfig(top_k=3, always_include=["terminal"])
+    result = ToolSelector(cfg).select("xyzqwerty12345 nonsense", SCHEMAS)
+    assert result.fail_open is False
+    assert result.reason == "no_relevant_match"
+    assert result.selected_names == ["terminal"]
+
+
+def test_repeated_query_tokens_are_deduplicated_before_scoring():
+    cfg = ToolSlimmerConfig(top_k=1, always_include=[])
+    schemas = [
+        {
+            "name": "terminal",
+            "description": ("open " * 10) + ("shell command process " * 20),
+        },
+        {
+            "name": "clarify",
+            "description": "open",
+        },
+    ]
+    result = ToolSelector(cfg).select("open " * 100, schemas)
+    assert result.selected_names == ["terminal"]
+
+
+def test_duplicate_names_warn_and_keep_first_schema(caplog):
+    cfg = ToolSlimmerConfig(top_k=1, always_include=[])
+    schemas = [
+        {"name": "same", "description": "first search target", "first": True},
+        {"name": "same", "description": "second search target", "first": False},
+    ]
+    with caplog.at_level("WARNING", logger="hermes_tool_slimmer.selector"):
+        result = ToolSelector(cfg).select("search target", schemas)
+    assert "duplicate tool schema names" in caplog.text
+    assert result.selected == [schemas[0]]
+
+
+def test_selector_validates_direct_config_instances():
+    with pytest.raises(ValueError, match="top_k"):
+        ToolSelector(ToolSlimmerConfig(top_k=-1))

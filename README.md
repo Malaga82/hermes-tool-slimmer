@@ -125,11 +125,13 @@ If none exists, the plugin does not monkeypatch provider internals. It remains u
 ## Safety model
 
 - `always_include` tools are selected first when present and not already disabled by Hermes.
-- `top_k` applies after `always_include`.
+- `top_k` applies after `always_include`; always-included tools do not count against the `top_k` budget.
 - `disabled_tools`, `disabled_toolsets`, `include_mcp_tools`, and `include_native_tools` are respected before ranking.
 - `min_total_tools` skips small catalogs before ranking; this keeps cron/small-toolset overhead near zero when there is little to save.
 - `min_estimated_reduction_percent` fails open after ranking if the estimated schema reduction is too small to justify altering the request.
 - `fail_open: true` sends the original schema list on selector errors.
+
+Keyword mode is intentionally literal. If users ask for synonyms that do not appear in tool names, descriptions, toolsets, or parameters, add those synonym hints to the tool description or use a semantic selector mode when available.
 - `dry_run: true` logs decisions and returns `None` to preserve original behavior.
 - Anthropic Tool Search helpers never defer every tool.
 

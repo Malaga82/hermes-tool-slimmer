@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from collections import defaultdict
 from typing import Iterable
 
 from .bm25 import BM25
@@ -9,10 +11,13 @@ from .tokenizer import tokenize
 from .toolsets import is_mcp_schema
 from .types import Schema, SelectionResult, ToolDocument
 
+LOG = logging.getLogger(__name__)
+
 
 class ToolSelector:
     def __init__(self, config: ToolSlimmerConfig | None = None) -> None:
         self.config = config or ToolSlimmerConfig()
+        self.config.validate()
 
     def select(self, user_message: str, schemas: list[Schema], **_: object) -> SelectionResult:
         if not self.config.enabled or self.config.mode == "eager":
@@ -49,7 +54,13 @@ class ToolSelector:
         raw_scores = bm25.scores(query_tokens)
         scores = {doc.name: score + self._boost(query_tokens, doc) for doc, score in zip(docs, raw_scores, strict=True)}
 
-        by_name = {tool_name(schema): schema for schema in eligible}
+        schemas_by_name: dict[str, list[Schema]] = defaultdict(list)
+        for schema in eligible:
+            schemas_by_name[tool_name(schema)].append(schema)
+        duplicate_names = sorted(name for name, matches in schemas_by_name.items() if len(matches) > 1)
+        if duplicate_names:
+            LOG.warning("duplicate tool schema names encountered; first schema wins: %s", ", ".join(duplicate_names))
+        by_name = {name: matches[0] for name, matches in schemas_by_name.items()}
         selected: list[Schema] = []
         selected_names: set[str] = set()
         always_present: list[str] = []
@@ -58,6 +69,14 @@ class ToolSelector:
                 selected.append(by_name[name])
                 selected_names.add(name)
                 always_present.append(name)
+
+        has_relevant_match = bool(query_tokens) and any(score > 0 for score in scores.values())
+        if not has_relevant_match:
+            if selected:
+                return SelectionResult(self.config.mode, selected, [tool_name(s) for s in selected], scores, len(schemas), always_present, reason="no_relevant_match")
+            if eligible and self.config.fail_open:
+                return SelectionResult(self.config.mode, eligible, [tool_name(s) for s in eligible], scores, len(schemas), always_present, fail_open=True, reason="no_relevant_match")
+            return SelectionResult(self.config.mode, selected, [], scores, len(schemas), always_present, reason="no_relevant_match")
 
         remaining_slots = self.config.top_k
         ranked = sorted(docs, key=lambda doc: (scores.get(doc.name, 0.0), doc.name), reverse=True)
