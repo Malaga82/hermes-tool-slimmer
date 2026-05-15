@@ -52,6 +52,23 @@ def record_decision(metrics: dict[str, object], context: dict[str, object] | Non
     }
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, sort_keys=True, default=str, separators=(",", ":")) + "\n")
+    _rotate_jsonl(path, max_lines=5000)
+
+
+def _rotate_jsonl(path: object, max_lines: int = 2000) -> None:
+    """Keep only the last *max_lines* entries in a JSONL file."""
+    from pathlib import Path as _P
+
+    p = _P(str(path))
+    if not p.exists():
+        return
+    try:
+        lines = p.read_text(encoding="utf-8").splitlines()
+        if len(lines) <= max_lines:
+            return
+        p.write_text("\n".join(lines[-max_lines:]) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 
 def record_actual_usage(
@@ -83,6 +100,7 @@ def record_actual_usage(
     }
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, sort_keys=True, default=str, separators=(",", ":")) + "\n")
+    _rotate_jsonl(path, max_lines=2000)
 
 
 def read_decisions(limit: int = 200) -> list[dict[str, object]]:
