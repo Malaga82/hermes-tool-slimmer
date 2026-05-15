@@ -1,16 +1,14 @@
-diff --git a/hermes_cli/plugins.py b/hermes_cli/plugins.py
-index e921034..24d15e7 100644
 --- a/hermes_cli/plugins.py
 +++ b/hermes_cli/plugins.py
-@@ -81,6 +81,7 @@ VALID_HOOKS: Set[str] = {
-     "transform_terminal_output",
-     "transform_tool_result",
+@@ -135,6 +135,7 @@
+     # First non-None string wins. Useful for vocabulary/personality transformation.
+     "transform_llm_output",
      "pre_llm_call",
 +    "select_tool_schemas",
      "post_llm_call",
      "pre_api_request",
      "post_api_request",
-@@ -1066,6 +1067,12 @@ class PluginManager:
+@@ -1209,6 +1210,13 @@
              {"context": "recalled text..."}
              "recalled text..."          # plain string, equivalent
  
@@ -20,14 +18,13 @@ index e921034..24d15e7 100644
 +        do not compose implicitly. Exceptions are swallowed here so selection
 +        fails open to the original request-local schema list.
 +
++
          Context is ALWAYS injected into the user message, never the
          system prompt.  This preserves the prompt cache prefix — the
          system prompt stays identical across turns so cached tokens
-diff --git a/run_agent.py b/run_agent.py
-index cfcd325..a405be8 100644
 --- a/run_agent.py
 +++ b/run_agent.py
-@@ -8284,6 +8284,10 @@ class AIAgent:
+@@ -9446,9 +9446,14 @@
                      content[-1]["cache_control"] = {"type": "ephemeral"}
                  break
  
@@ -35,46 +32,42 @@ index cfcd325..a405be8 100644
 +        request_tools = getattr(self, "_tools_for_request", None)
 +        return request_tools if request_tools is not None else self.tools
 +
++
      def _build_api_kwargs(self, api_messages: list) -> dict:
          """Build the keyword arguments dict for the active API mode."""
+-        tools_for_api = self.tools
++        tools_for_api = self._active_tools_for_request()
+ 
          if self.api_mode == "anthropic_messages":
-@@ -8297,7 +8301,7 @@ class AIAgent:
-             return _transport.build_kwargs(
-                 model=self.model,
-                 messages=anthropic_messages,
--                tools=self.tools,
-+                tools=self._active_tools_for_request(),
-                 max_tokens=ephemeral_out if ephemeral_out is not None else self.max_tokens,
-                 reasoning_config=self.reasoning_config,
-                 is_oauth=self._is_anthropic_oauth,
-@@ -8317,7 +8321,7 @@ class AIAgent:
-             return _bt.build_kwargs(
-                 model=self.model,
-                 messages=api_messages,
--                tools=self.tools,
-+                tools=self._active_tools_for_request(),
-                 max_tokens=self.max_tokens or 4096,
-                 region=region,
-                 guardrail_config=guardrail,
-@@ -8341,7 +8345,7 @@ class AIAgent:
-             return _ct.build_kwargs(
-                 model=self.model,
-                 messages=_msgs_for_codex,
--                tools=self.tools,
-+                tools=self._active_tools_for_request(),
-                 reasoning_config=self.reasoning_config,
-                 session_id=getattr(self, "session_id", None),
-                 max_tokens=self.max_tokens,
-@@ -8427,7 +8431,7 @@ class AIAgent:
-         return _ct.build_kwargs(
-             model=self.model,
-             messages=_msgs_for_chat,
--            tools=self.tools,
-+            tools=self._active_tools_for_request(),
-             base_url=self.base_url,
-             timeout=self._resolved_api_call_timeout(),
-             max_tokens=self.max_tokens,
-@@ -10699,6 +10703,41 @@ class AIAgent:
+             _transport = self._get_transport()
+@@ -10396,7 +10401,7 @@
+         _compressed_est = estimate_request_tokens_rough(
+             compressed,
+             system_prompt=new_system_prompt or "",
+-            tools=self.tools or None,
++            tools=self._active_tools_for_request() or None,
+         )
+         self.context_compressor.last_prompt_tokens = _compressed_est
+         self.context_compressor.last_completion_tokens = 0
+@@ -11970,7 +11975,7 @@
+             _preflight_tokens = estimate_request_tokens_rough(
+                 messages,
+                 system_prompt=active_system_prompt or "",
+-                tools=self.tools or None,
++                tools=self._active_tools_for_request() or None,
+             )
+ 
+             if _preflight_tokens >= self.context_compressor.threshold_tokens:
+@@ -12016,7 +12021,7 @@
+                     _preflight_tokens = estimate_request_tokens_rough(
+                         messages,
+                         system_prompt=active_system_prompt or "",
+-                        tools=self.tools or None,
++                        tools=self._active_tools_for_request() or None,
+                     )
+                     if _preflight_tokens < self.context_compressor.threshold_tokens:
+                         break  # Under threshold
+@@ -12057,6 +12062,42 @@
          except Exception as exc:
              logger.warning("pre_llm_call hook failed: %s", exc)
  
@@ -113,10 +106,11 @@ index cfcd325..a405be8 100644
 +                )
 +            return tools_for_request
 +
++
          # Main conversation loop
          api_call_count = 0
          final_response = None
-@@ -11115,7 +11154,12 @@ class AIAgent:
+@@ -12503,7 +12544,12 @@
  
                  try:
                      self._reset_stream_delivery_tracking()
@@ -130,7 +124,7 @@ index cfcd325..a405be8 100644
                      if self._force_ascii_payload:
                          _sanitize_structure_non_ascii(api_kwargs)
                      if self.api_mode == "codex_responses":
-@@ -11134,7 +11178,7 @@ class AIAgent:
+@@ -12522,7 +12568,7 @@
                              api_mode=self.api_mode,
                              api_call_count=api_call_count,
                              message_count=len(api_messages),
@@ -139,58 +133,3 @@ index cfcd325..a405be8 100644
                              approx_input_tokens=approx_tokens,
                              request_char_count=total_chars,
                              max_tokens=self.max_tokens,
-diff --git a/tests/hermes_cli/test_tool_schema_selector_hook.py b/tests/hermes_cli/test_tool_schema_selector_hook.py
-new file mode 100644
-index 0000000..edd50f2
---- /dev/null
-+++ b/tests/hermes_cli/test_tool_schema_selector_hook.py
-@@ -0,0 +1,49 @@
-+from __future__ import annotations
-+
-+from hermes_cli.plugins import PluginManager, VALID_HOOKS
-+
-+
-+def test_select_tool_schemas_is_valid_hook():
-+    assert "select_tool_schemas" in VALID_HOOKS
-+
-+
-+def test_select_tool_schemas_returns_first_non_none_result():
-+    mgr = PluginManager()
-+    original = [{"type": "function", "function": {"name": "a"}}]
-+    selected = [{"type": "function", "function": {"name": "b"}}]
-+    mgr._hooks["select_tool_schemas"] = [lambda **kwargs: None, lambda **kwargs: selected]
-+
-+    results = mgr.invoke_hook("select_tool_schemas", schemas=original)
-+
-+    assert results[0] == selected
-+
-+
-+def test_select_tool_schemas_exception_fails_open_to_other_results():
-+    mgr = PluginManager()
-+    selected = [{"type": "function", "function": {"name": "safe"}}]
-+
-+    def boom(**kwargs):
-+        raise RuntimeError("broken selector")
-+
-+    mgr._hooks["select_tool_schemas"] = [boom, lambda **kwargs: selected]
-+
-+    assert mgr.invoke_hook("select_tool_schemas", schemas=[]) == [selected]
-+
-+
-+def test_request_tools_helper_preserves_empty_selection_and_catalog():
-+    class AgentLike:
-+        def __init__(self):
-+            self.tools = [{"name": "read_file"}, {"name": "search_files"}]
-+            self._tools_for_request = None
-+
-+        def _active_tools_for_request(self):
-+            request_tools = getattr(self, "_tools_for_request", None)
-+            return request_tools if request_tools is not None else self.tools
-+
-+    agent = AgentLike()
-+    assert agent._active_tools_for_request() == agent.tools
-+    agent._tools_for_request = []
-+    assert agent._active_tools_for_request() == []
-+    assert agent.tools == [{"name": "read_file"}, {"name": "search_files"}]
-+    agent._tools_for_request = None
-+    assert agent._active_tools_for_request() == agent.tools
