@@ -131,7 +131,7 @@ If none exists, the plugin does not monkeypatch provider internals. It remains u
 - `min_estimated_reduction_percent` fails open after ranking if the estimated schema reduction is too small to justify altering the request.
 - `fail_open: true` sends the original schema list on selector errors.
 
-Keyword mode is intentionally literal. If users ask for synonyms that do not appear in tool names, descriptions, toolsets, or parameters, add those synonym hints to the tool description or use a semantic selector mode when available.
+Keyword mode is intentionally mostly literal. It includes a small deterministic synonym map for common operation words such as browsing/navigation, but tool-specific synonyms should still be added to tool descriptions or handled by a semantic selector mode when available.
 - `dry_run: true` logs decisions and returns `None` to preserve original behavior.
 - Anthropic Tool Search helpers never defer every tool.
 

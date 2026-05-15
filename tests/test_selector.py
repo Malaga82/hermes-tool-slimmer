@@ -121,3 +121,16 @@ def test_duplicate_names_warn_and_keep_first_schema(caplog):
 def test_selector_validates_direct_config_instances():
     with pytest.raises(ValueError, match="top_k"):
         ToolSelector(ToolSlimmerConfig(top_k=-1))
+
+
+def test_keyword_synonyms_route_browse_to_browser_navigation():
+    cfg = ToolSlimmerConfig(top_k=3, always_include=[])
+    schemas = [
+        {"name": "session_search", "description": "Search previous sessions"},
+        {"name": "clarify", "description": "Ask the user a clarifying question"},
+        {"name": "send_message", "description": "Send a chat message"},
+        {"name": "browser_navigate", "description": "Navigate browser to a URL"},
+    ]
+    result = ToolSelector(cfg).select("browse to a website", schemas)
+    assert "browser_navigate" in result.selected_names
+    assert result.selected_names[0] == "browser_navigate"

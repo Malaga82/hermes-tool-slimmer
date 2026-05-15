@@ -13,6 +13,14 @@ from .types import Schema, SelectionResult, ToolDocument
 
 LOG = logging.getLogger(__name__)
 
+QUERY_SYNONYMS = {
+    "browse": ["browser", "navigate", "url", "web", "website", "page"],
+    "browsing": ["browser", "navigate", "url", "web", "website", "page"],
+    "site": ["website", "web", "url", "page"],
+    "webpage": ["website", "web", "url", "page"],
+    "website": ["web", "url", "page"],
+}
+
 
 class ToolSelector:
     def __init__(self, config: ToolSlimmerConfig | None = None) -> None:
@@ -49,7 +57,7 @@ class ToolSelector:
     def _select_keyword(self, user_message: str, schemas: list[Schema]) -> SelectionResult:
         eligible = self._eligible(schemas)
         docs = build_corpus(eligible)
-        query_tokens = tokenize(user_message)
+        query_tokens = expand_query_tokens(tokenize(user_message))
         bm25 = BM25([doc.tokens for doc in docs])
         raw_scores = bm25.scores(query_tokens)
         scores = {doc.name: score + self._boost(query_tokens, doc) for doc, score in zip(docs, raw_scores, strict=True)}
@@ -106,6 +114,17 @@ class ToolSelector:
             boost += 2.5
         boost += 1.25 * len(doc.parameter_tokens & query)
         return boost
+
+
+def expand_query_tokens(tokens: list[str]) -> list[str]:
+    expanded: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        for value in [token, *QUERY_SYNONYMS.get(token, [])]:
+            if value not in seen:
+                expanded.append(value)
+                seen.add(value)
+    return expanded
 
 
 def select_schemas(user_message: str, schemas: list[Schema], config: ToolSlimmerConfig | None = None, **kwargs: object) -> list[Schema]:

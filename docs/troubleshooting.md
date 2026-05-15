@@ -20,7 +20,7 @@ Open the Tool Slimmer dashboard page and click **Rebuild From Hermes Tools**. Th
 
 Add it to `tool_slimmer.always_include` or increase `top_k`. The selector never resurrects tools that Hermes already disabled.
 
-In keyword mode, the selector only matches text present in tool names, toolsets, descriptions, and parameter schemas. If users naturally say "browse" but the tool is described only as "navigate", add both terms to the tool description or move to a semantic selector mode when one is available.
+In keyword mode, the selector mostly matches text present in tool names, toolsets, descriptions, and parameter schemas. It includes a small built-in synonym map for common browser/navigation wording, but domain-specific synonyms should still be added to tool descriptions or handled by a semantic selector mode when one is available.
 
 `always_include` is intentionally outside the `top_k` budget. For example, five always-included tools plus `top_k: 8` can return up to thirteen selected tools.
 
