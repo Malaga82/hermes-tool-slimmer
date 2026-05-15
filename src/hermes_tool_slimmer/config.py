@@ -36,6 +36,7 @@ class ToolSlimmerConfig:
     dry_run: bool = False
     min_total_tools: int = 20
     min_estimated_reduction_percent: float = 5.0
+    aliases: dict[str, list[str]] = field(default_factory=dict)
     anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
 
     @classmethod

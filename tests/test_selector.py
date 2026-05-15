@@ -153,3 +153,11 @@ def test_keyword_synonyms_route_browse_to_browser_navigation():
     result = ToolSelector(cfg).select("browse to a website", schemas)
     assert "browser_navigate" in result.selected_names
     assert result.selected_names[0] == "browser_navigate"
+    assert result.score_details["browser_navigate"]["alias_boost"] > 0
+
+
+def test_configured_aliases_expand_keyword_matching():
+    cfg = ToolSlimmerConfig(top_k=1, always_include=[], aliases={"repo": ["github", "code"]})
+    result = ToolSelector(cfg).select("repo search", SCHEMAS)
+    assert result.selected_names == ["github_search_code"]
+    assert "github" in result.expanded_query_tokens

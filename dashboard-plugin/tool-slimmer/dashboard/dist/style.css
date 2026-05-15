@@ -78,3 +78,10 @@
   overflow-wrap: anywhere;
   padding: 0.5rem;
 }
+
+.tool-slimmer-score-row {
+  border-bottom: 1px solid hsl(var(--border));
+  display: grid;
+  gap: 0.2rem;
+  padding-bottom: 0.45rem;
+}

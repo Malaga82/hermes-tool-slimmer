@@ -77,6 +77,8 @@ tool_slimmer:
   log_decisions: true
   min_total_tools: 20
   min_estimated_reduction_percent: 5.0
+  aliases:
+    browse: [browser, navigate, url, website]
   fail_open: true      # selector errors preserve the original full schema list
   dry_run: false       # true logs/injects diagnostics but does not alter schemas
 ```
@@ -90,6 +92,8 @@ hermes tool-slimmer index rebuild --schemas examples/tools.yaml
 hermes tool-slimmer index show --top 20
 hermes tool-slimmer select "search this repo for MCP registration code" --schemas tools.yaml
 hermes tool-slimmer benchmark --prompts examples/prompts.yaml --schemas examples/tools.yaml
+hermes tool-slimmer eval --prompts examples/prompts.yaml --schemas examples/tools.yaml
+hermes tool-slimmer analyze-config
 hermes tool-slimmer recommend-config
 ```
 
@@ -132,6 +136,7 @@ If none exists, the plugin does not monkeypatch provider internals. It remains u
 - `fail_open: true` sends the original schema list on selector errors.
 
 Keyword mode is intentionally mostly literal. It includes a small deterministic synonym map for common operation words such as browsing/navigation, but tool-specific synonyms should still be added to tool descriptions or handled by a semantic selector mode when available.
+- `aliases` extends keyword query expansion deterministically; aliases affect ranking and score details but do not rewrite stored tool schemas.
 - `dry_run: true` logs decisions and returns `None` to preserve original behavior.
 - Anthropic Tool Search helpers never defer every tool.
 

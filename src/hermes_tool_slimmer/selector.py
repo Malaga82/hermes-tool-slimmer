@@ -13,7 +13,7 @@ from .types import Schema, SelectionResult, ToolDocument
 
 LOG = logging.getLogger(__name__)
 
-QUERY_SYNONYMS = {
+BUILTIN_ALIASES = {
     "browse": ["browser", "navigate", "url", "web", "website", "page"],
     "browsing": ["browser", "navigate", "url", "web", "website", "page"],
     "site": ["website", "web", "url", "page"],
@@ -60,10 +60,19 @@ class ToolSelector:
     def _select_keyword(self, user_message: str, schemas: list[Schema]) -> SelectionResult:
         eligible = self._eligible(schemas)
         docs = build_corpus(eligible)
-        query_tokens = expand_query_tokens(tokenize(user_message))
+        base_query_tokens = tokenize(user_message)
+        query_tokens, alias_terms = expand_query_tokens(base_query_tokens, self.config.aliases)
         bm25 = BM25([doc.tokens for doc in docs])
         raw_scores = bm25.scores(query_tokens)
-        scores = {doc.name: score + self._boost(query_tokens, doc) for doc, score in zip(docs, raw_scores, strict=True)}
+        score_details: dict[str, dict[str, float]] = {}
+        scores: dict[str, float] = {}
+        for doc, raw_score in zip(docs, raw_scores, strict=True):
+            parts = self._score_parts(query_tokens, alias_terms, doc)
+            parts["bm25"] = raw_score
+            total = round(sum(parts.values()), 6)
+            parts["total"] = total
+            score_details[doc.name] = parts
+            scores[doc.name] = total
 
         schemas_by_name: dict[str, list[Schema]] = defaultdict(list)
         for schema in eligible:
@@ -84,10 +93,10 @@ class ToolSelector:
         has_relevant_match = bool(query_tokens) and any(score > 0 for score in scores.values())
         if not has_relevant_match:
             if selected:
-                return SelectionResult(self.config.mode, selected, [tool_name(s) for s in selected], scores, len(schemas), always_present, reason="no_relevant_match")
+                return SelectionResult(self.config.mode, selected, [tool_name(s) for s in selected], scores, len(schemas), always_present, reason="no_relevant_match", score_details=score_details, expanded_query_tokens=query_tokens)
             if eligible and self.config.fail_open:
-                return SelectionResult(self.config.mode, eligible, [tool_name(s) for s in eligible], scores, len(schemas), always_present, fail_open=True, reason="no_relevant_match")
-            return SelectionResult(self.config.mode, selected, [], scores, len(schemas), always_present, reason="no_relevant_match")
+                return SelectionResult(self.config.mode, eligible, [tool_name(s) for s in eligible], scores, len(schemas), always_present, fail_open=True, reason="no_relevant_match", score_details=score_details, expanded_query_tokens=query_tokens)
+            return SelectionResult(self.config.mode, selected, [], scores, len(schemas), always_present, reason="no_relevant_match", score_details=score_details, expanded_query_tokens=query_tokens)
 
         remaining_slots = self.config.top_k
         ranked = sorted(docs, key=lambda doc: (scores.get(doc.name, 0.0), doc.name), reverse=True)
@@ -103,32 +112,41 @@ class ToolSelector:
             remaining_slots -= 1
 
         if not selected and eligible and self.config.fail_open:
-            return SelectionResult(self.config.mode, schemas, [tool_name(s) for s in schemas], scores, len(schemas), always_present, fail_open=True, reason="selector produced empty set")
-        return SelectionResult(self.config.mode, selected, [tool_name(s) for s in selected], scores, len(schemas), always_present)
+            return SelectionResult(self.config.mode, schemas, [tool_name(s) for s in schemas], scores, len(schemas), always_present, fail_open=True, reason="selector produced empty set", score_details=score_details, expanded_query_tokens=query_tokens)
+        return SelectionResult(self.config.mode, selected, [tool_name(s) for s in selected], scores, len(schemas), always_present, score_details=score_details, expanded_query_tokens=query_tokens)
 
     @staticmethod
-    def _boost(query_tokens: list[str], doc: ToolDocument) -> float:
+    def _score_parts(query_tokens: list[str], alias_terms: set[str], doc: ToolDocument) -> dict[str, float]:
         query = set(query_tokens)
-        boost = 0.0
+        parts = {"name_boost": 0.0, "toolset_boost": 0.0, "parameter_boost": 0.0, "alias_boost": 0.0}
         normalized_name = doc.name.lower()
         query_text = " ".join(query_tokens)
         if len(normalized_name) >= 2 and (normalized_name in query_text or normalized_name.replace("_", " ") in query_text):
-            boost += 10.0
+            parts["name_boost"] += 10.0
         if doc.toolset and set(tokenize(doc.toolset)) & query:
-            boost += 2.5
-        boost += 1.25 * len(doc.parameter_tokens & query)
-        return boost
+            parts["toolset_boost"] += 2.5
+        parts["parameter_boost"] += 1.25 * len(doc.parameter_tokens & query)
+        alias_matches = alias_terms & (set(doc.tokens) | doc.parameter_tokens | set(tokenize(doc.toolset or "")))
+        parts["alias_boost"] += 0.75 * len(alias_matches)
+        return parts
 
 
-def expand_query_tokens(tokens: list[str]) -> list[str]:
+def expand_query_tokens(tokens: list[str], configured_aliases: dict[str, list[str]] | None = None) -> tuple[list[str], set[str]]:
+    aliases = {key: list(values) for key, values in BUILTIN_ALIASES.items()}
+    for key, values in (configured_aliases or {}).items():
+        aliases.setdefault(str(key).lower(), [])
+        aliases[str(key).lower()].extend(str(value).lower() for value in values)
     expanded: list[str] = []
     seen: set[str] = set()
+    alias_terms: set[str] = set()
     for token in tokens:
-        for value in [token, *QUERY_SYNONYMS.get(token, [])]:
+        token_aliases = aliases.get(token, [])
+        alias_terms.update(token_aliases)
+        for value in [token, *token_aliases]:
             if value not in seen:
                 expanded.append(value)
                 seen.add(value)
-    return expanded
+    return expanded, alias_terms
 
 
 def select_schemas(user_message: str, schemas: list[Schema], config: ToolSlimmerConfig | None = None, **kwargs: object) -> list[Schema]:

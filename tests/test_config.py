@@ -23,6 +23,7 @@ def test_config_full_mapping_and_nested_anthropic():
                 "defer_native_tools": True,
                 "tool_search_supported": True,
             },
+            "aliases": {"repo": ["repository"]},
             "unknown": "ignored",
         }
     )
@@ -33,6 +34,7 @@ def test_config_full_mapping_and_nested_anthropic():
     assert cfg.anthropic.variant == "regex"
     assert cfg.anthropic.defer_native_tools is True
     assert cfg.anthropic.tool_search_supported is True
+    assert cfg.aliases == {"repo": ["repository"]}
 
 
 def test_config_ignores_invalid_anthropic_section_type():

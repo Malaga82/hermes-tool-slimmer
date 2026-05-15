@@ -32,6 +32,6 @@ def tool_slimmer_select(args: dict, **kwargs: Any) -> str:
         schemas = args.get("schemas") or kwargs.get("schemas") or []
         query = args.get("query") or args.get("text") or ""
         result = ToolSelector(cfg).select(query, schemas)
-        return _json({"ok": True, "mode": result.mode, "selected": result.selected_names, "scores": result.scores, "fail_open": result.fail_open, "reason": result.reason})
+        return _json({"ok": True, "mode": result.mode, "selected": result.selected_names, "scores": result.scores, "score_details": result.score_details, "fail_open": result.fail_open, "reason": result.reason})
     except Exception as exc:
         return _json({"ok": False, "error": str(exc)})

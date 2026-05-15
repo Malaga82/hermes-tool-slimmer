@@ -46,6 +46,24 @@ def test_cli_tool_names_tolerates_null_function_wrapper():
     assert _tool_names([{"function": None}]) == {""}
 
 
+def test_cli_analyze_config_and_eval(tmp_path, capsys):
+    from argparse import Namespace
+    from hermes_tool_slimmer.cli import handle_cli
+
+    schemas = tmp_path / "schemas.yaml"
+    prompts = tmp_path / "prompts.yaml"
+    schemas.write_text("schemas:\n- name: search_files\n  description: Search files\n")
+    prompts.write_text("prompts:\n- name: search\n  text: search files\n  expected_any: [search_files]\n")
+
+    assert handle_cli(Namespace(command="eval", config=None, schemas=str(schemas), prompts=str(prompts))) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["summary"]["hit_rate"] == 1.0
+    assert handle_cli(Namespace(command="analyze-config", config=None)) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True
+    assert "recommendations" in out
+
+
 def test_integration_contract_returns_none_when_disabled():
     out = select_tool_schemas_callback("read", [], [{"name": "read_file"}], "model", "platform", config=ToolSlimmerConfig(enabled=False))
     assert out is None
@@ -284,6 +302,7 @@ def test_dashboard_plugin_api_reports_status_and_summary(monkeypatch, tmp_path):
         status = client.get("/status")
         summary = client.get("/summary")
         events = client.get("/events?limit=1")
+        advisor = client.get("/advisor")
         index_before = client.get("/index")
         rebuilt = client.post(
             "/index/rebuild",
@@ -302,6 +321,8 @@ def test_dashboard_plugin_api_reports_status_and_summary(monkeypatch, tmp_path):
     assert summary.json()["summary"]["totals"]["events"] == 1
     assert summary.json()["all_summary"]["totals"]["events"] == 1
     assert events.json()["events"][0]["metrics"]["selected"] == ["read_file"]
+    assert advisor.status_code == 200
+    assert advisor.json()["advisor"]["ok"] is True
     assert index_before.status_code == 200
     assert index_before.json()["index"]["exists"] is False
     assert rebuilt.status_code == 200

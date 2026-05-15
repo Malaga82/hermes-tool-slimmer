@@ -92,12 +92,24 @@ def select_tool_schemas_callback(
             effective_cfg = fallback_cfg
         metrics = reduction_metrics(effective_cfg.mode, schemas, selected, result.always_included)
         metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+        metrics["selected_scores"] = {name: result.score_details.get(name, {}) for name in result.selected_names}
+        metrics["top_candidates"] = [
+            {"name": name, "score": score, "details": result.score_details.get(name, {})}
+            for name, score in sorted(result.scores.items(), key=lambda item: item[1], reverse=True)[:10]
+        ]
+        metrics["expanded_query_tokens"] = result.expanded_query_tokens
         raw_reduction = metrics["estimated_reduction_percent"]
         reduction_percent = raw_reduction if isinstance(raw_reduction, (int, float)) else 0.0
         if reduction_percent < cfg.min_estimated_reduction_percent:
             selected = schemas
             metrics = reduction_metrics(effective_cfg.mode, schemas, selected, result.always_included)
             metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+            metrics["selected_scores"] = {name: result.score_details.get(name, {}) for name in result.selected_names}
+            metrics["top_candidates"] = [
+                {"name": name, "score": score, "details": result.score_details.get(name, {})}
+                for name, score in sorted(result.scores.items(), key=lambda item: item[1], reverse=True)[:10]
+            ]
+            metrics["expanded_query_tokens"] = result.expanded_query_tokens
             metrics["skipped"] = True
             metrics["skip_reason"] = "below_min_estimated_reduction_percent"
             metrics["min_estimated_reduction_percent"] = cfg.min_estimated_reduction_percent

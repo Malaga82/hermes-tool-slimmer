@@ -44,7 +44,7 @@
   }
 
   function useToolSlimmerData() {
-    const [state, setState] = useState({ loading: true, error: null, status: null, summary: null, indexInfo: null });
+    const [state, setState] = useState({ loading: true, error: null, status: null, summary: null, indexInfo: null, advisor: null });
 
     function load() {
       setState(function (prev) { return Object.assign({}, prev, { loading: true, error: null }); });
@@ -52,8 +52,9 @@
         SDK.fetchJSON("/api/plugins/tool-slimmer/status"),
         SDK.fetchJSON("/api/plugins/tool-slimmer/summary?limit=1000"),
         SDK.fetchJSON("/api/plugins/tool-slimmer/index"),
+        SDK.fetchJSON("/api/plugins/tool-slimmer/advisor?limit=1000"),
       ]).then(function (results) {
-        setState({ loading: false, error: null, status: results[0], summary: results[1].summary, indexInfo: results[2].index });
+        setState({ loading: false, error: null, status: results[0], summary: results[1].summary, indexInfo: results[2].index, advisor: results[3].advisor });
       }).catch(function (error) {
         setState(function (prev) {
           return Object.assign({}, prev, { loading: false, error: error && error.message ? error.message : "LOAD_FAILED" });
@@ -81,6 +82,12 @@
     const doctor = (data.status && data.status.doctor && data.status.doctor.checks) || {};
     const recent = summary.recent || [];
     const indexDocs = index.documents || [];
+    const advisor = data.advisor || {};
+    const recommendations = advisor.recommendations || [];
+    const latestDecision = recent.length ? recent[recent.length - 1] : null;
+    const latestCandidates = latestDecision && latestDecision.metrics && latestDecision.metrics.top_candidates
+      ? latestDecision.metrics.top_candidates
+      : [];
 
     const topTools = useMemo(function () {
       return Object.entries(summary.top_selected_tools || {}).slice(0, 10);
@@ -200,6 +207,46 @@
                   React.createElement("div", { className: "tool-slimmer-muted text-xs" }, check.message),
                 ),
                 React.createElement(Badge, { variant: check.status === "pass" ? "default" : "outline" }, check.status),
+              );
+            }),
+          ),
+        ),
+      ),
+
+      React.createElement("div", { className: "grid gap-4 lg:grid-cols-2" },
+        React.createElement(Card, null,
+          React.createElement(CardHeader, null, React.createElement(CardTitle, null, "Config Advisor")),
+          React.createElement(CardContent, { className: "grid gap-3 text-sm" },
+            recommendations.length === 0 && React.createElement("div", { className: "tool-slimmer-muted" }, "No recommendations from recent selector activity."),
+            recommendations.map(function (item) {
+              return React.createElement("div", { key: item.id, className: "flex items-start justify-between gap-3 border-b border-border pb-2" },
+                React.createElement("div", null,
+                  React.createElement("div", { className: "font-medium" }, String(item.id || "").replaceAll("_", " ")),
+                  React.createElement("div", { className: "tool-slimmer-muted text-xs" }, item.message),
+                ),
+                React.createElement(Badge, { variant: item.severity === "warn" ? "outline" : "default" }, item.severity || "info"),
+              );
+            }),
+          ),
+        ),
+        React.createElement(Card, null,
+          React.createElement(CardHeader, null, React.createElement(CardTitle, null, "Decision Inspector")),
+          React.createElement(CardContent, { className: "grid gap-2 text-sm" },
+            latestCandidates.length === 0 && React.createElement("div", { className: "tool-slimmer-muted" }, "No score details recorded yet."),
+            latestCandidates.slice(0, 6).map(function (candidate) {
+              const details = candidate.details || {};
+              return React.createElement("div", { key: candidate.name, className: "tool-slimmer-score-row" },
+                React.createElement("div", { className: "flex justify-between gap-3" },
+                  React.createElement("span", { className: "font-courier" }, candidate.name),
+                  React.createElement("span", null, Number(candidate.score || 0).toFixed(2)),
+                ),
+                React.createElement("div", { className: "tool-slimmer-muted text-xs" },
+                  "bm25 ", Number(details.bm25 || 0).toFixed(2),
+                  " / name ", Number(details.name_boost || 0).toFixed(2),
+                  " / toolset ", Number(details.toolset_boost || 0).toFixed(2),
+                  " / params ", Number(details.parameter_boost || 0).toFixed(2),
+                  " / alias ", Number(details.alias_boost || 0).toFixed(2),
+                ),
               );
             }),
           ),

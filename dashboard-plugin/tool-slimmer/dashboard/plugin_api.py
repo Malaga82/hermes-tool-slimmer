@@ -9,7 +9,7 @@ router = APIRouter()
 
 def _load_modules():
     try:
-        from hermes_tool_slimmer.cli import run_doctor
+        from hermes_tool_slimmer.cli import analyze_config, run_doctor
         from hermes_tool_slimmer.config import load_config
         from hermes_tool_slimmer.index_store import IndexStore
         from hermes_tool_slimmer.metrics import read_decisions, summarize_decisions
@@ -18,7 +18,7 @@ def _load_modules():
             status_code=503,
             detail={"error": "tool_slimmer_unavailable", "message": str(exc)},
         ) from exc
-    return run_doctor, load_config, IndexStore, read_decisions, summarize_decisions
+    return analyze_config, run_doctor, load_config, IndexStore, read_decisions, summarize_decisions
 
 
 def _summarize_index(store: Any) -> dict[str, Any]:
@@ -84,7 +84,7 @@ def _live_hermes_schemas() -> list[dict[str, Any]]:
 
 @router.get("/status")
 async def status() -> dict[str, Any]:
-    run_doctor, load_config, IndexStore, _read_decisions, _summarize_decisions = _load_modules()
+    _analyze_config, run_doctor, load_config, IndexStore, _read_decisions, _summarize_decisions = _load_modules()
     cfg = load_config()
     store = IndexStore()
     index = store.load() or {}
@@ -101,6 +101,7 @@ async def status() -> dict[str, Any]:
             "min_estimated_reduction_percent": cfg.min_estimated_reduction_percent,
             "always_include": cfg.always_include,
             "never_defer": cfg.never_defer,
+            "aliases": cfg.aliases,
         },
         "index": {
             "path": str(store.path),
@@ -114,13 +115,13 @@ async def status() -> dict[str, Any]:
 
 @router.get("/index")
 async def index_status() -> dict[str, Any]:
-    _run_doctor, _load_config, IndexStore, _read_decisions, _summarize_decisions = _load_modules()
+    _analyze_config, _run_doctor, _load_config, IndexStore, _read_decisions, _summarize_decisions = _load_modules()
     return {"ok": True, "index": _summarize_index(IndexStore())}
 
 
 @router.post("/index/rebuild")
 async def rebuild_index(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
-    _run_doctor, _load_config, IndexStore, _read_decisions, _summarize_decisions = _load_modules()
+    _analyze_config, _run_doctor, _load_config, IndexStore, _read_decisions, _summarize_decisions = _load_modules()
     source = "hermes"
     schemas: list[dict[str, Any]]
     raw_schemas = (payload or {}).get("schemas") or (payload or {}).get("tools")
@@ -142,7 +143,7 @@ async def rebuild_index(payload: dict[str, Any] | None = Body(default=None)) -> 
 
 @router.get("/summary")
 async def summary(limit: int = Query(default=1000, ge=1, le=10000)) -> dict[str, Any]:
-    _run_doctor, _load_config, _IndexStore, _read_decisions, summarize_decisions = _load_modules()
+    _analyze_config, _run_doctor, _load_config, _IndexStore, _read_decisions, summarize_decisions = _load_modules()
     return {
         "ok": True,
         "summary": summarize_decisions(limit=limit, require_session=True),
@@ -152,5 +153,13 @@ async def summary(limit: int = Query(default=1000, ge=1, le=10000)) -> dict[str,
 
 @router.get("/events")
 async def events(limit: int = Query(default=100, ge=1, le=1000)) -> dict[str, Any]:
-    _run_doctor, _load_config, _IndexStore, read_decisions, _summarize_decisions = _load_modules()
+    _analyze_config, _run_doctor, _load_config, _IndexStore, read_decisions, _summarize_decisions = _load_modules()
     return {"ok": True, "events": read_decisions(limit=limit)}
+
+
+@router.get("/advisor")
+async def advisor(limit: int = Query(default=1000, ge=1, le=10000)) -> dict[str, Any]:
+    analyze_config, _run_doctor, load_config, IndexStore, _read_decisions, summarize_decisions = _load_modules()
+    cfg = load_config()
+    index = IndexStore().load() or {}
+    return {"ok": True, "advisor": analyze_config(cfg, summarize_decisions(limit=limit, require_session=True), int(index.get("total_tools") or 0))}
