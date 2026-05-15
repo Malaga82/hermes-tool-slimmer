@@ -54,6 +54,37 @@ def record_decision(metrics: dict[str, object], context: dict[str, object] | Non
         handle.write(json.dumps(event, sort_keys=True, default=str, separators=(",", ":")) + "\n")
 
 
+def record_actual_usage(
+    session_id: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    cache_read: int = 0,
+    cache_creation: int = 0,
+    total_tokens: int = 0,
+    api_duration: float | None = None,
+) -> None:
+    """Append actual API usage data from post_api_request hook."""
+    path = hermes_home() / "tool-slimmer" / "actual_usage.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "timestamp": time.time(),
+        "session_id": session_id or "",
+        "model": model or "",
+        "provider": provider or "",
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "cache_read_tokens": cache_read,
+        "cache_creation_tokens": cache_creation,
+        "total_tokens": total_tokens,
+        "net_new_tokens": prompt_tokens - cache_read,
+        "api_duration_ms": api_duration,
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, sort_keys=True, default=str, separators=(",", ":")) + "\n")
+
+
 def read_decisions(limit: int = 200) -> list[dict[str, object]]:
     path = hermes_home() / "tool-slimmer" / "decisions.jsonl"
     if not path.exists():
