@@ -26,10 +26,10 @@ ALIAS_PATH = os.environ.get(
                  "tool-slimmer-it-aliases.yaml")
 )
 
-# Use the Go proxy for LLM calls
-API_URL = os.environ.get("EXPAND_ALIASES_API_URL", "http://127.0.0.1:8421/v1/chat/completions")
-API_KEY = os.environ.get("COMMANDCODE_API_KEY", "dummy")
-MODEL = os.environ.get("EXPAND_ALIASES_MODEL", "deepseek/deepseek-v4-flash")
+# Use zai (GLM) for LLM calls — cheap and fast
+API_URL = os.environ.get("EXPAND_ALIASES_API_URL", "https://api.z.ai/api/coding/paas/v4/chat/completions")
+API_KEY = os.environ.get("GLM_API_KEY", os.environ.get("ZAI_API_KEY", ""))
+MODEL = os.environ.get("EXPAND_ALIASES_MODEL", "glm-5-turbo")
 
 SYSTEM_PROMPT = """You are a bilingual Italian→English translation assistant.
 Your job is to expand an Italian→English alias dictionary used for keyword matching.

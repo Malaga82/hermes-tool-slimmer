@@ -85,9 +85,9 @@ Environment variables for the expansion script:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `EXPAND_ALIASES_API_URL` | `http://127.0.0.1:8421/v1/chat/completions` | LLM API endpoint |
-| `EXPAND_ALIASES_MODEL` | `deepseek/deepseek-v4-flash` | Model for translations |
-| `COMMANDCODE_API_KEY` | (from .env) | API key for the LLM |
+| `EXPAND_ALIASES_API_URL` | `https://api.z.ai/api/coding/paas/v4/chat/completions` | LLM API endpoint |
+| `EXPAND_ALIASES_MODEL` | `glm-5-turbo` | Model for translations |
+| `GLM_API_KEY` | (from env) | API key for zai/GLM |
 | `TOOL_SLIMMER_ALIASES` | `$HERMES_HOME/tool-slimmer-it-aliases.yaml` | Path to alias dictionary |
 | `TOOL_SLIMMER_ALIASES_DISABLED` | (unset) | Set `1`/`true` to disable alias expansion |
 
