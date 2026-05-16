@@ -1,7 +1,8 @@
 from hermes_tool_slimmer.anthropic_tool_search import apply_defer_loading, tool_search_tool
 from hermes_tool_slimmer.config import ToolSlimmerConfig
 from hermes_tool_slimmer.index_store import IndexStore
-from hermes_tool_slimmer.metrics import reduction_metrics
+from hermes_tool_slimmer.metrics import reduction_metrics, schema_bytes, summarize_decisions
+from hermes_tool_slimmer.toolsets import schema_origin
 
 
 def test_index_rebuilds_on_schema_checksum_change(tmp_path):
@@ -13,12 +14,62 @@ def test_index_rebuilds_on_schema_checksum_change(tmp_path):
     assert one["checksum"] != two["checksum"]
 
 
+def test_index_store_accepts_string_root(tmp_path):
+    store = IndexStore(str(tmp_path / "index-root"))
+    payload = store.rebuild([{"name": "read_file", "description": "Read"}])
+    assert payload["total_tools"] == 1
+    assert store.path.exists()
+
+
+def test_index_checksum_tolerates_null_function_schema():
+    checksum = IndexStore.checksum([{"name": None, "function": None}])
+    assert isinstance(checksum, str)
+
+
+def test_index_checksum_is_order_independent():
+    schemas = [
+        {"name": "read_file", "description": "Read"},
+        {"name": "search_files", "description": "Search"},
+        {"name": "terminal", "description": "Run commands"},
+    ]
+
+    assert IndexStore.checksum(schemas) == IndexStore.checksum(list(reversed(schemas)))
+
+
+def test_index_load_returns_none_for_corrupt_json(tmp_path):
+    store = IndexStore(tmp_path)
+    store.path.write_text("{not json")
+    assert store.load() is None
+
+
 def test_metrics_estimate_reduction():
     original = [{"name": "a", "description": "x" * 100}, {"name": "b", "description": "y" * 100}]
     selected = [original[0]]
     metrics = reduction_metrics("keyword", original, selected, ["a"])
     assert metrics["schema_bytes_after"] < metrics["schema_bytes_before"]
     assert metrics["estimated_reduction_percent"] > 0
+
+
+def test_schema_bytes_tolerates_non_json_values():
+    assert schema_bytes([{"fn": lambda: None}]) > 0
+
+
+def test_summarize_decisions_tolerates_bad_metric_types(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    log = tmp_path / "tool-slimmer" / "decisions.jsonl"
+    log.parent.mkdir()
+    log.write_text(
+        '{"metrics":{"schema_bytes_before":"bad","schema_bytes_after":"bad","approx_tokens_before":"bad","approx_tokens_after":"bad","selected_tools":"bad","total_tools":"bad","selection_ms":"bad","estimated_reduction_percent":"bad","selected":"not-list"},"context":{}}\n'
+    )
+
+    summary = summarize_decisions()
+    assert summary["totals"]["events"] == 1
+    assert summary["totals"]["schema_bytes_before"] == 0
+    assert summary["averages"]["selection_ms"] == 0.0
+
+
+def test_schema_origin_tolerates_null_function_wrapper():
+    assert schema_origin({"function": None}) == "native"
 
 
 def test_anthropic_defer_never_defers_all_tools():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -34,12 +35,17 @@ class ToolSlimmerConfig:
     log_decisions: bool = True
     fail_open: bool = True
     dry_run: bool = False
+    min_total_tools: int = 20
+    min_estimated_reduction_percent: float = 5.0
+    aliases: dict[str, list[str]] = field(default_factory=dict)
     anthropic: AnthropicConfig = field(default_factory=AnthropicConfig)
 
     @classmethod
     def from_mapping(cls, data: dict[str, Any] | None) -> "ToolSlimmerConfig":
         raw = dict(data or {})
         anthropic_raw = raw.pop("anthropic", {}) or {}
+        if not isinstance(anthropic_raw, dict):
+            anthropic_raw = {}
         cfg = cls(**{key: value for key, value in raw.items() if key in cls.__dataclass_fields__ and key != "anthropic"})
         cfg.anthropic = AnthropicConfig(**{key: value for key, value in anthropic_raw.items() if key in AnthropicConfig.__dataclass_fields__})
         cfg.validate()
@@ -48,8 +54,18 @@ class ToolSlimmerConfig:
     def validate(self) -> None:
         if self.mode not in VALID_MODES:
             raise ValueError(f"Invalid tool_slimmer.mode {self.mode!r}; expected one of {sorted(VALID_MODES)}")
+        if not isinstance(self.top_k, int) or isinstance(self.top_k, bool) or not math.isfinite(self.top_k):
+            raise ValueError("tool_slimmer.top_k must be a finite integer")
         if self.top_k < 0:
             raise ValueError("tool_slimmer.top_k must be >= 0")
+        if not isinstance(self.min_total_tools, int) or isinstance(self.min_total_tools, bool) or not math.isfinite(self.min_total_tools):
+            raise ValueError("tool_slimmer.min_total_tools must be a finite integer")
+        if self.min_total_tools < 0:
+            raise ValueError("tool_slimmer.min_total_tools must be >= 0")
+        if not isinstance(self.min_estimated_reduction_percent, (int, float)) or isinstance(self.min_estimated_reduction_percent, bool) or not math.isfinite(self.min_estimated_reduction_percent):
+            raise ValueError("tool_slimmer.min_estimated_reduction_percent must be finite")
+        if self.min_estimated_reduction_percent < 0:
+            raise ValueError("tool_slimmer.min_estimated_reduction_percent must be >= 0")
 
 
 def hermes_home() -> Path:
@@ -62,7 +78,7 @@ def config_path() -> Path:
 
 def load_config(path: str | Path | None = None) -> ToolSlimmerConfig:
     target = Path(path).expanduser() if path else config_path()
-    if not target.exists():
+    if not target.is_file():
         return ToolSlimmerConfig()
     data = yaml.safe_load(target.read_text()) or {}
     section = data.get("tool_slimmer", data if "mode" in data else {})

@@ -23,6 +23,7 @@ def test_config_full_mapping_and_nested_anthropic():
                 "defer_native_tools": True,
                 "tool_search_supported": True,
             },
+            "aliases": {"repo": ["repository"]},
             "unknown": "ignored",
         }
     )
@@ -33,6 +34,12 @@ def test_config_full_mapping_and_nested_anthropic():
     assert cfg.anthropic.variant == "regex"
     assert cfg.anthropic.defer_native_tools is True
     assert cfg.anthropic.tool_search_supported is True
+    assert cfg.aliases == {"repo": ["repository"]}
+
+
+def test_config_ignores_invalid_anthropic_section_type():
+    cfg = ToolSlimmerConfig.from_mapping({"anthropic": "tool_search"})
+    assert cfg.anthropic.variant == "bm25"
 
 
 def test_config_invalid_mode():
@@ -45,9 +52,21 @@ def test_config_invalid_top_k():
         ToolSlimmerConfig.from_mapping({"top_k": -1})
 
 
+def test_config_rejects_nan_numeric_fields():
+    with pytest.raises(ValueError, match="top_k"):
+        ToolSlimmerConfig.from_mapping({"top_k": float("nan")})
+    with pytest.raises(ValueError, match="min_estimated_reduction_percent"):
+        ToolSlimmerConfig.from_mapping({"min_estimated_reduction_percent": float("nan")})
+
+
 def test_load_config_reads_tool_slimmer_section(tmp_path):
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({"tool_slimmer": {"mode": "eager", "top_k": 0}}))
     cfg = load_config(path)
     assert cfg.mode == "eager"
     assert cfg.top_k == 0
+
+
+def test_load_config_directory_path_returns_defaults(tmp_path):
+    cfg = load_config(tmp_path)
+    assert cfg.mode == "keyword"

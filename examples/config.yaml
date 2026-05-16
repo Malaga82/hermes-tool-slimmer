@@ -18,5 +18,7 @@ tool_slimmer:
   include_mcp_tools: true
   include_native_tools: true
   log_decisions: true
+  min_total_tools: 20
+  min_estimated_reduction_percent: 5.0
   fail_open: true
   dry_run: false

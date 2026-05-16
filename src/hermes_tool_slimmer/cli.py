@@ -11,6 +11,7 @@ import yaml
 
 from .anthropic_tool_search import supports_anthropic_tool_search
 from .config import ToolSlimmerConfig, config_path, load_config
+from .corpus import tool_name
 from .index_store import IndexStore
 from .metrics import reduction_metrics
 from .selector import ToolSelector
@@ -19,14 +20,49 @@ from .selector import ToolSelector
 def _load_schemas(path: str | None) -> list[dict[str, Any]]:
     if not path:
         return []
-    data = yaml.safe_load(Path(path).read_text())
+    target = Path(path).expanduser()
+    if not target.is_file():
+        return []
+    data = yaml.safe_load(target.read_text())
     if isinstance(data, dict):
-        return data.get("tools") or data.get("schemas") or []
+        schemas = data.get("tools") or data.get("schemas")
+        if isinstance(schemas, list):
+            return schemas
+        documents = data.get("documents")
+        if isinstance(documents, list):
+            out = []
+            for doc in documents:
+                if not isinstance(doc, dict) or not doc.get("name"):
+                    continue
+                tokens = doc.get("tokens")
+                token_text = " ".join(str(token) for token in tokens) if isinstance(tokens, list) else ""
+                out.append(
+                    {
+                        "name": doc.get("name"),
+                        "toolset": doc.get("toolset"),
+                        "description": doc.get("text") or token_text,
+                    }
+                )
+            return out
+        return []
     return data or []
 
 
+def _load_prompts(path: str | None) -> list[dict[str, Any]]:
+    if not path:
+        return []
+    target = Path(path).expanduser()
+    if not target.is_file():
+        return []
+    data = yaml.safe_load(target.read_text())
+    if isinstance(data, dict):
+        prompts = data.get("prompts")
+        return prompts if isinstance(prompts, list) else []
+    return data if isinstance(data, list) else []
+
+
 def _tool_names(schemas: list[dict[str, Any]]) -> set[str]:
-    return {str(s.get("name") or s.get("function", {}).get("name") or "") for s in schemas}
+    return {tool_name(schema) for schema in schemas}
 
 
 def _check(status: str, message: str, detail: object | None = None) -> dict[str, object]:
@@ -34,6 +70,130 @@ def _check(status: str, message: str, detail: object | None = None) -> dict[str,
     if detail is not None:
         item["detail"] = detail
     return item
+
+
+def analyze_config(cfg: ToolSlimmerConfig, summary: dict[str, object] | None = None, indexed_tools: int = 0) -> dict[str, object]:
+    totals = (summary or {}).get("totals") if isinstance(summary, dict) else {}
+    averages = (summary or {}).get("averages") if isinstance(summary, dict) else {}
+    totals = totals if isinstance(totals, dict) else {}
+    averages = averages if isinstance(averages, dict) else {}
+    events = int(totals.get("events") or 0)
+    skipped = int(totals.get("skipped_events") or 0)
+    recommendations: list[dict[str, object]] = []
+    if events == 0:
+        recommendations.append({"id": "collect_data", "severity": "info", "message": "No real selector events are available yet; keep decision logging on until the dashboard has enough data."})
+    if len(cfg.always_include) > max(1, cfg.top_k):
+        recommendations.append({"id": "review_always_include", "severity": "warn", "message": "always_include is larger than top_k; confirm every always-on tool is truly required.", "tools": cfg.always_include})
+    if events and skipped / events > 0.5:
+        recommendations.append({"id": "review_guardrails", "severity": "warn", "message": "More than half of recent selections were skipped by guardrails; review min_total_tools and min_estimated_reduction_percent."})
+    if cfg.mode == "keyword" and not cfg.aliases:
+        recommendations.append({"id": "add_aliases", "severity": "info", "message": "Keyword mode is deterministic; add aliases for common user wording that differs from tool names."})
+    if indexed_tools == 0:
+        recommendations.append({"id": "rebuild_index", "severity": "info", "message": "The persisted tool index is empty; rebuild it from the dashboard after tool changes."})
+    return {
+        "ok": True,
+        "config": {"mode": cfg.mode, "top_k": cfg.top_k, "always_include": cfg.always_include, "min_total_tools": cfg.min_total_tools, "min_estimated_reduction_percent": cfg.min_estimated_reduction_percent, "aliases": cfg.aliases},
+        "observed": {"events": events, "skipped_events": skipped, "average_reduction_percent": averages.get("reduction_percent", 0), "indexed_tools": indexed_tools},
+        "recommendations": recommendations,
+    }
+
+
+def privacy_inventory() -> dict[str, object]:
+    return {
+        "ok": True,
+        "raw_prompts_logged": False,
+        "decision_log_path": str(IndexStore().root / "decisions.jsonl"),
+        "event_fields": ["timestamp", "metrics", "context"],
+        "context_fields": ["provider", "model", "platform", "session_id", "dry_run", "schema_count"],
+        "metric_fields": [
+            "mode",
+            "total_tools",
+            "selected_tools",
+            "schema_bytes_before",
+            "schema_bytes_after",
+            "schema_bytes_saved",
+            "approx_tokens_before",
+            "approx_tokens_after",
+            "approx_tokens_saved",
+            "estimated_reduction_percent",
+            "always_included",
+            "selected",
+            "selection_ms",
+            "skipped",
+            "skip_reason",
+            "selected_scores",
+            "top_candidates",
+            "expanded_query_tokens",
+        ],
+        "notes": [
+            "Raw user prompts are not written to decisions.jsonl.",
+            "Dashboard headline totals exclude events without a session_id.",
+            "Score details include tool names and numeric ranking components.",
+        ],
+    }
+
+
+def eval_prompts(cfg: ToolSlimmerConfig, schemas: list[dict[str, Any]], prompts: list[dict[str, Any]]) -> dict[str, object]:
+    rows = []
+    hits = 0
+    fail_open_count = 0
+    selector = ToolSelector(cfg)
+    total_reduction = 0.0
+    total_selected = 0
+    for prompt in prompts:
+        result = selector.select(str(prompt.get("text") or ""), schemas)
+        metrics = reduction_metrics(cfg.mode, schemas, result.selected, result.always_included)
+        expected = set(prompt.get("expected_any", []))
+        hit = bool(expected & set(result.selected_names)) if expected else None
+        if hit:
+            hits += 1
+        if result.fail_open:
+            fail_open_count += 1
+        total_selected += len(result.selected_names)
+        reduction_value = metrics.get("estimated_reduction_percent")
+        total_reduction += float(reduction_value) if isinstance(reduction_value, (int, float, str)) else 0.0
+        rows.append({"name": prompt.get("name"), "selected": result.selected_names, "expected_included": hit, "reduction_percent": metrics["estimated_reduction_percent"], "fail_open": result.fail_open, "reason": result.reason})
+    expected_rows = [row for row in rows if row["expected_included"] is not None]
+    return {
+        "summary": {
+            "prompts": len(rows),
+            "expected_prompts": len(expected_rows),
+            "hit_rate": round(hits / len(expected_rows), 3) if expected_rows else None,
+            "average_reduction_percent": round(total_reduction / len(rows), 1) if rows else 0.0,
+            "average_selected_tools": round(total_selected / len(rows), 1) if rows else 0.0,
+            "fail_open_count": fail_open_count,
+        },
+        "rows": rows,
+    }
+
+
+def eval_markdown(report: dict[str, object]) -> str:
+    summary = report.get("summary") if isinstance(report, dict) else {}
+    rows = report.get("rows") if isinstance(report, dict) else []
+    summary = summary if isinstance(summary, dict) else {}
+    rows = rows if isinstance(rows, list) else []
+    lines = [
+        "# Tool Slimmer Eval Report",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
+        f"| Prompts | {summary.get('prompts', 0)} |",
+        f"| Expected prompts | {summary.get('expected_prompts', 0)} |",
+        f"| Hit rate | {summary.get('hit_rate')} |",
+        f"| Average selected tools | {summary.get('average_selected_tools', 0)} |",
+        f"| Average reduction | {summary.get('average_reduction_percent', 0)}% |",
+        f"| Fail-open count | {summary.get('fail_open_count', 0)} |",
+        "",
+        "| Prompt | Expected hit | Reduction | Fail-open | Selected |",
+        "|---|---:|---:|---:|---|",
+    ]
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        selected = ", ".join(str(item) for item in row.get("selected", []))
+        lines.append(f"| {row.get('name') or ''} | {row.get('expected_included')} | {row.get('reduction_percent')}% | {row.get('fail_open')} | {selected} |")
+    lines.append("")
+    return "\n".join(lines)
 
 
 def run_doctor(
@@ -44,7 +204,10 @@ def run_doctor(
 ) -> dict[str, object]:
     checks: dict[str, dict[str, object]] = {}
     cfg: ToolSlimmerConfig | None = None
+    target = Path(config_arg).expanduser() if config_arg else config_path()
     try:
+        if config_arg and not target.is_file():
+            raise FileNotFoundError(str(target))
         cfg = load_config(config_arg)
         checks["config"] = _check("pass", "tool_slimmer config is valid", {"mode": cfg.mode, "top_k": cfg.top_k})
     except Exception as exc:
@@ -58,8 +221,7 @@ def run_doctor(
 
     enabled_detail: object = "config file not found"
     enabled_status = "warn"
-    target = Path(config_arg).expanduser() if config_arg else config_path()
-    if target.exists():
+    if target.is_file():
         try:
             data = yaml.safe_load(target.read_text()) or {}
             enabled = data.get("plugins", {}).get("enabled", []) if isinstance(data, dict) else []
@@ -152,6 +314,12 @@ def setup_argparse(parser: argparse.ArgumentParser) -> None:
     bench = sub.add_parser("benchmark")
     bench.add_argument("--prompts", required=True)
     bench.add_argument("--schemas")
+    eval_cmd = sub.add_parser("eval")
+    eval_cmd.add_argument("--prompts", required=True)
+    eval_cmd.add_argument("--schemas")
+    eval_cmd.add_argument("--markdown", action="store_true")
+    sub.add_parser("analyze-config")
+    sub.add_parser("privacy")
     sub.add_parser("recommend-config")
 
 
@@ -169,6 +337,9 @@ def handle_cli(args: argparse.Namespace) -> int:
                 sort_keys=True,
             )
         )
+        return 0
+    if args.command == "privacy":
+        print(json.dumps(privacy_inventory(), indent=2, sort_keys=True))
         return 0
 
     cfg = load_config(getattr(args, "config", None))
@@ -189,11 +360,11 @@ def handle_cli(args: argparse.Namespace) -> int:
     if args.command == "select":
         schemas = _load_schemas(args.schemas)
         result = ToolSelector(cfg).select(args.query, schemas)
-        print(json.dumps({"selected": result.selected_names, "scores": result.scores, "fail_open": result.fail_open}, indent=2, sort_keys=True))
+        print(json.dumps({"selected": result.selected_names, "scores": result.scores, "score_details": result.score_details, "fail_open": result.fail_open}, indent=2, sort_keys=True))
         return 0
     if args.command == "benchmark":
         schemas = _load_schemas(args.schemas)
-        prompts = yaml.safe_load(Path(args.prompts).read_text()).get("prompts", [])
+        prompts = _load_prompts(args.prompts)
         rows = []
         selector = ToolSelector(cfg)
         for prompt in prompts:
@@ -203,8 +374,21 @@ def handle_cli(args: argparse.Namespace) -> int:
             rows.append({"name": prompt.get("name"), "selected": result.selected_names, "expected_included": bool(expected & set(result.selected_names)) if expected else None, "metrics": metrics})
         print(json.dumps({"benchmarks": rows}, indent=2))
         return 0
+    if args.command == "eval":
+        schemas = _load_schemas(args.schemas)
+        prompts = _load_prompts(args.prompts)
+        report = eval_prompts(cfg, schemas, prompts)
+        print(eval_markdown(report) if getattr(args, "markdown", False) else json.dumps(report, indent=2, sort_keys=True))
+        return 0
+    if args.command == "analyze-config":
+        from .metrics import summarize_decisions
+
+        store = IndexStore()
+        index = store.load() or {}
+        print(json.dumps(analyze_config(cfg, summarize_decisions(require_session=True), int(index.get("total_tools") or 0)), indent=2, sort_keys=True))
+        return 0
     if args.command == "recommend-config":
-        print(yaml.safe_dump({"tool_slimmer": {"enabled": True, "mode": "keyword", "top_k": 8, "always_include": cfg.always_include, "fail_open": True, "dry_run": False}}, sort_keys=False))
+        print(yaml.safe_dump({"tool_slimmer": {"enabled": True, "mode": "keyword", "top_k": 8, "always_include": cfg.always_include, "min_total_tools": cfg.min_total_tools, "min_estimated_reduction_percent": cfg.min_estimated_reduction_percent, "fail_open": True, "dry_run": False}}, sort_keys=False))
         return 0
     raise ValueError(f"Unknown command {args.command}")
 

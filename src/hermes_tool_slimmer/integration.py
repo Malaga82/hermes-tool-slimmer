@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from typing import Any
 
 from .anthropic_tool_search import maybe_anthropic_tools
@@ -10,6 +11,26 @@ from .selector import ToolSelector
 from .types import Schema
 
 LOG = logging.getLogger(__name__)
+
+
+def _metrics_for_selection(
+    mode: str,
+    schemas: list[Schema],
+    selected: list[Schema],
+    hot_selected: list[Schema],
+    always_included: list[str],
+) -> dict[str, object]:
+    metrics_selected = selected
+    if mode == "anthropic_tool_search" and selected is not hot_selected:
+        metrics_selected = hot_selected
+    metrics = reduction_metrics(mode, schemas, metrics_selected, always_included)
+    if mode == "anthropic_tool_search" and selected is not hot_selected:
+        metrics["metric_basis"] = "hot_set"
+        metrics["anthropic_payload_tools"] = len(selected)
+        metrics["anthropic_deferred_tools"] = sum(
+            1 for schema in selected if isinstance(schema, dict) and schema.get("defer_loading") is True
+        )
+    return metrics
 
 
 def select_tool_schemas_callback(
@@ -27,6 +48,31 @@ def select_tool_schemas_callback(
     if not cfg.enabled:
         return None
     try:
+        started = perf_counter()
+        if len(schemas) < cfg.min_total_tools:
+            metrics = reduction_metrics(cfg.mode, schemas, schemas, [])
+            metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+            metrics["skipped"] = True
+            metrics["skip_reason"] = "below_min_total_tools"
+            metrics["min_total_tools"] = cfg.min_total_tools
+            if cfg.log_decisions:
+                LOG.info("tool-slimmer skipped", extra={"tool_slimmer": metrics})
+                try:
+                    record_decision(
+                        metrics,
+                        {
+                            "provider": provider,
+                            "model": model,
+                            "platform": platform,
+                            "session_id": session_id,
+                            "dry_run": cfg.dry_run,
+                            "schema_count": len(schemas),
+                        },
+                    )
+                except Exception as exc:
+                    LOG.warning("tool-slimmer decision logging failed: %s", exc)
+            return None
+
         effective_cfg = cfg
         result = ToolSelector(effective_cfg).select(
             user_message,
@@ -64,7 +110,29 @@ def select_tool_schemas_callback(
             )
             selected = result.selected
             effective_cfg = fallback_cfg
-        metrics = reduction_metrics(effective_cfg.mode, schemas, selected, result.always_included)
+        metrics = _metrics_for_selection(effective_cfg.mode, schemas, selected, result.selected, result.always_included)
+        metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+        metrics["selected_scores"] = {name: result.score_details.get(name, {}) for name in result.selected_names}
+        metrics["top_candidates"] = [
+            {"name": name, "score": score, "details": result.score_details.get(name, {})}
+            for name, score in sorted(result.scores.items(), key=lambda item: item[1], reverse=True)[:10]
+        ]
+        metrics["expanded_query_tokens"] = result.expanded_query_tokens
+        raw_reduction = metrics["estimated_reduction_percent"]
+        reduction_percent = raw_reduction if isinstance(raw_reduction, (int, float)) else 0.0
+        if reduction_percent < cfg.min_estimated_reduction_percent:
+            selected = schemas
+            metrics = reduction_metrics(effective_cfg.mode, schemas, selected, result.always_included)
+            metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+            metrics["selected_scores"] = {name: result.score_details.get(name, {}) for name in result.selected_names}
+            metrics["top_candidates"] = [
+                {"name": name, "score": score, "details": result.score_details.get(name, {})}
+                for name, score in sorted(result.scores.items(), key=lambda item: item[1], reverse=True)[:10]
+            ]
+            metrics["expanded_query_tokens"] = result.expanded_query_tokens
+            metrics["skipped"] = True
+            metrics["skip_reason"] = "below_min_estimated_reduction_percent"
+            metrics["min_estimated_reduction_percent"] = cfg.min_estimated_reduction_percent
         if cfg.log_decisions:
             LOG.info("tool-slimmer selection", extra={"tool_slimmer": metrics})
             try:

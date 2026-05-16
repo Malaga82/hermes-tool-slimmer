@@ -39,5 +39,5 @@ class BM25:
         return score
 
     def scores(self, query_tokens: Iterable[str]) -> list[float]:
-        query = list(query_tokens)
+        query = list(dict.fromkeys(query_tokens))
         return [self.score(query, idx) for idx in range(self._doc_count)]

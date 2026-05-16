@@ -64,3 +64,24 @@
   font-size: 0.72rem;
   padding: 0.12rem 0.4rem;
 }
+
+.tool-slimmer-index-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.tool-slimmer-path {
+  border: 1px solid hsl(var(--border));
+  font-family: var(--font-courier);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+  padding: 0.5rem;
+}
+
+.tool-slimmer-score-row {
+  border-bottom: 1px solid hsl(var(--border));
+  display: grid;
+  gap: 0.2rem;
+  padding-bottom: 0.45rem;
+}

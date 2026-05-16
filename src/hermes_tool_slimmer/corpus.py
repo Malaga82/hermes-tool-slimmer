@@ -7,15 +7,23 @@ from .tokenizer import tokenize, tokens_with_exact_identifier
 from .types import Schema, ToolDocument
 
 
-def tool_name(schema: Schema) -> str:
-    return str(schema.get("name") or schema.get("function", {}).get("name") or "")
+def tool_name(schema: object) -> str:
+    if not isinstance(schema, dict):
+        return ""
+    function = schema.get("function") or {}
+    return str(schema.get("name") or (function.get("name") if isinstance(function, dict) else "") or "")
 
 
-def tool_description(schema: Schema) -> str:
-    return str(schema.get("description") or schema.get("function", {}).get("description") or "")
+def tool_description(schema: object) -> str:
+    if not isinstance(schema, dict):
+        return ""
+    function = schema.get("function") or {}
+    return str(schema.get("description") or (function.get("description") if isinstance(function, dict) else "") or "")
 
 
-def tool_toolset(schema: Schema) -> str | None:
+def tool_toolset(schema: object) -> str | None:
+    if not isinstance(schema, dict):
+        return None
     for key in ("toolset", "tool_set", "namespace", "server", "mcp_server"):
         value = schema.get(key)
         if value:
@@ -23,23 +31,35 @@ def tool_toolset(schema: Schema) -> str | None:
     return None
 
 
-def _schema_parameters(schema: Schema) -> dict[str, Any]:
+def _schema_parameters(schema: object) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {}
     params = schema.get("parameters") or schema.get("input_schema") or {}
     if not params and isinstance(schema.get("function"), dict):
         params = schema["function"].get("parameters") or {}
     return params if isinstance(params, dict) else {}
 
 
-def _walk_schema(value: Any) -> Iterable[str]:
+def _walk_schema(value: Any, seen: set[int] | None = None) -> Iterable[str]:
+    if seen is None:
+        seen = set()
     if isinstance(value, dict):
+        marker = id(value)
+        if marker in seen:
+            return
+        seen.add(marker)
         for key, nested in value.items():
             yield str(key)
             if key in {"description", "title", "enum"}:
                 yield str(nested)
-            yield from _walk_schema(nested)
+            yield from _walk_schema(nested, seen)
     elif isinstance(value, list):
+        marker = id(value)
+        if marker in seen:
+            return
+        seen.add(marker)
         for item in value[:25]:
-            yield from _walk_schema(item)
+            yield from _walk_schema(item, seen)
     elif isinstance(value, (str, int, float, bool)):
         yield str(value)
 
