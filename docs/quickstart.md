@@ -2,11 +2,13 @@
 
 ## 1. Install
 
+Use Tool Slimmer v0.3.6+ with Hermes Agent v0.14.0. Older Tool Slimmer releases are not functionally compatible with Hermes v0.14.0 active schema slimming because the provider request construction code moved.
+
 ```bash
 scripts/install-hermes-tool-slimmer.sh
 ```
 
-The installer handles the Python package, dashboard files, Hermes plugin enablement, Hermes core selector hook, service restart, and final verification.
+The installer handles the Python package, dashboard files, Hermes plugin enablement, Hermes core selector hook, service restart, and final verification. Its core patcher supports both older monolithic Hermes cores and the current v0.14.0 modular core layout.
 
 ## 2. Add configuration
 

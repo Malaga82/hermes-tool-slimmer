@@ -1,12 +1,14 @@
 # Hermes core integration
 
-Hermes Tool Slimmer needs one upstream integration point before provider request construction. Current Hermes source inspection found the main schema provider in `model_tools.get_tool_definitions(...)`, plugin hook registration in `hermes_cli.plugins.PluginContext.register_hook(...)`, and `pre_llm_call` invocation in `run_agent.AIAgent` before the provider loop.
+Hermes Tool Slimmer needs one upstream integration point before provider request construction. Current Hermes v0.14.0 source inspection found the main schema provider in `model_tools.get_tool_definitions(...)`, plugin hook registration in `hermes_cli.plugins.PluginContext.register_hook(...)`, turn orchestration in `agent/conversation_loop.py`, and provider kwargs construction in `agent/chat_completion_helpers.py`.
+
+Compatibility note: Tool Slimmer v0.3.6+ is the supported line for Hermes Agent v0.14.0 active schema slimming. The installer patcher still carries a fallback for older monolithic `run_agent.py` Hermes cores, but older Tool Slimmer releases should not be used with Hermes v0.14.0.
 
 `docs/hermes-core-selector-hook.patch` is a minimal upstreamable patch artifact for Hermes core. It adds:
 
 - `select_tool_schemas` to `VALID_HOOKS`.
 - One turn-level invocation after `pre_llm_call` and before provider request construction.
-- Request-local schema lists via `_tools_for_request`, reset immediately after request kwargs are built; selected subsets do not overwrite the canonical `self.tools` catalog and cannot make tool selection sticky across turns. Empty selected lists remain empty because the helper uses explicit `is not None` semantics.
+- Request-local schema lists applied only while provider kwargs are built by temporarily swapping `self.tools`/`agent.tools`, then restoring the canonical catalog immediately. Selected subsets do not become sticky across turns, and an empty selected list remains a valid "send no tools" result.
 - First-non-`None` selector behavior with warning for multiple selector results.
 - Fail-open behavior because plugin hook exceptions are swallowed by `PluginManager.invoke_hook` and the caller keeps the original request-local schema list on malformed/no results.
 - Contract tests for valid hook registration, first selector result, selector exception behavior, and non-sticky catalog semantics.
@@ -15,7 +17,7 @@ Validation evidence captured while preparing the patch artifact:
 
 ```bash
 git -C /tmp/hermes-agent-core apply docs/hermes-core-selector-hook.patch
-python3 -m py_compile run_agent.py hermes_cli/plugins.py tests/hermes_cli/test_tool_schema_selector_hook.py
+python3 -m py_compile hermes_cli/plugins.py agent/conversation_loop.py tests/hermes_cli/test_tool_schema_selector_hook.py
 PYTHONPATH=/tmp/hermes-agent-core pytest -q -o addopts='' tests/hermes_cli/test_tool_schema_selector_hook.py
 # 4 passed
 git -C /tmp/hermes-agent-core diff --check
@@ -48,4 +50,4 @@ Core behavior should be fail-open:
 4. If one or more callbacks return lists, use only the first list and warn when there are multiple.
 5. If a callback raises, log and keep processing other callbacks; if no valid list remains, keep the original schemas.
 
-The plugin still probes compatibility methods (`register_tool_schema_selector`, `register_schema_selector`, or `register_hook("select_tool_schemas", ...)`) and never monkeypatches provider internals.
+The plugin still probes compatibility methods (`register_tool_schema_selector`, `register_schema_selector`, or `register_hook("select_tool_schemas", ...)`). Active slimming requires one of those selector surfaces; otherwise the plugin can report diagnostics but cannot alter provider request schemas.

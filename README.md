@@ -26,11 +26,13 @@ Dashboard headline totals count real Hermes session events by default. Probe eve
 
 ## Install
 
+Hermes Tool Slimmer v0.3.6+ is the supported line for Hermes Agent v0.14.0. Older Tool Slimmer releases can load as dashboard/diagnostic plugins on v0.14.0, but they do not provide active schema slimming because Hermes moved the request construction path.
+
 ```bash
 scripts/install-hermes-tool-slimmer.sh
 ```
 
-That handles the package install, dashboard plugin copy, Hermes plugin enablement, selector-hook patch, service restart, and final health report.
+That handles the package install, dashboard plugin copy, Hermes plugin enablement, selector-hook patch, service restart, and final health report. The core patcher supports both the older monolithic `run_agent.py` Hermes layout and the newer v0.14.0 modular `agent/conversation_loop.py` plus `agent/chat_completion_helpers.py` layout.
 
 For a guided setup, see [`docs/quickstart.md`](docs/quickstart.md). For the Hermes dashboard page, see [`docs/dashboard-plugin.md`](docs/dashboard-plugin.md).
 
@@ -126,7 +128,7 @@ Supported/target core surfaces:
 - `ctx.register_schema_selector(callback)`
 - `ctx.register_hook("select_tool_schemas", callback)`
 
-If none exists, the plugin does not monkeypatch provider internals. It remains useful for dry-run diagnostics, benchmarking, and configuration recommendations until Hermes core exposes a selector hook. See `docs/hermes-core-selector-hook.patch` for a minimal upstreamable Hermes core patch artifact based on current source inspection.
+If none exists, active schema slimming requires the installer/core patch to add `select_tool_schemas` before provider request construction. Without that core hook, the plugin remains useful for dashboard visibility, dry-run diagnostics, benchmarking, and configuration recommendations, but it cannot reduce provider request schemas. See `docs/hermes-core-selector-hook.patch` for a minimal upstreamable Hermes core patch artifact based on current v0.14.0 source inspection.
 
 ## Safety model
 

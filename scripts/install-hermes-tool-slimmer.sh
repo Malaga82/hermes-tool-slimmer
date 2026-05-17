@@ -121,17 +121,16 @@ import importlib.util
 from pathlib import Path
 
 plugins_spec = importlib.util.find_spec("hermes_cli.plugins")
+conversation_spec = importlib.util.find_spec("agent.conversation_loop")
+helpers_spec = importlib.util.find_spec("agent.chat_completion_helpers")
 run_agent_spec = importlib.util.find_spec("run_agent")
 if plugins_spec is None or plugins_spec.origin is None:
     raise SystemExit("Could not locate hermes_cli.plugins in Hermes Python")
-if run_agent_spec is None or run_agent_spec.origin is None:
-    raise SystemExit("Could not locate run_agent in Hermes Python")
 
 plugins_py = Path(plugins_spec.origin)
-run_agent_py = Path(run_agent_spec.origin)
 
-if not plugins_py.exists() or not run_agent_py.exists():
-    raise SystemExit(f"Could not find Hermes source near {hermes_bin}")
+if not plugins_py.exists():
+    raise SystemExit("Could not find hermes_cli.plugins source file")
 
 plugins_text = plugins_py.read_text(encoding="utf-8")
 if '"select_tool_schemas"' not in plugins_text:
@@ -145,7 +144,7 @@ if '"select_tool_schemas"' not in plugins_text:
         '            "recalled text..."          # plain string, equivalent\n\n'
     )
     doc_insert = (
-        doc_marker
+        doc_marker +
         "        For ``select_tool_schemas``, callbacks receive a request-local copy\n"
         "        of the full enabled schema list and may return a replacement list.\n"
         "        Callers should apply only the first non-None list so multiple schema\n"
@@ -154,66 +153,156 @@ if '"select_tool_schemas"' not in plugins_text:
     )
     if doc_marker in plugins_text:
         plugins_text = plugins_text.replace(doc_marker, doc_insert, 1)
-    plugins_py.write_text(plugins_text, encoding="utf-8")
+plugins_py.write_text(plugins_text, encoding="utf-8")
 
-run_text = run_agent_py.read_text(encoding="utf-8")
-if "def _active_tools_for_request(self):" not in run_text:
-    marker = '    def _build_api_kwargs(self, api_messages: list) -> dict:\n'
-    helper = (
+patched_files = [plugins_py]
+
+
+def patch_modular_core(conversation_py: Path, helpers_py: Path) -> None:
+    if not conversation_py.exists() or not helpers_py.exists():
+        raise SystemExit("Could not find modular Hermes core source files")
+
+    helpers_text = helpers_py.read_text(encoding="utf-8")
+    helpers_text = helpers_text.replace(
+        '    tools_for_api = getattr(agent, "_tools_for_request", None)\n'
+        "    if tools_for_api is None:\n"
+        "        tools_for_api = agent.tools\n",
+        "    tools_for_api = agent.tools\n",
+        1,
+    )
+    helpers_py.write_text(helpers_text, encoding="utf-8")
+
+    conversation_text = conversation_py.read_text(encoding="utf-8")
+    if 'def _select_tools_for_request() -> list | None:' not in conversation_text:
+        marker = '        # Main conversation loop\n'
+        selector = (
+            "        def _select_tools_for_request() -> list | None:\n"
+            "            if not agent.tools:\n"
+            "                return agent.tools\n"
+            "            tools_for_request = list(agent.tools)\n"
+            "            try:\n"
+            "                from hermes_cli.plugins import invoke_hook as _invoke_hook\n"
+            "                _schema_results = _invoke_hook(\n"
+            '                    "select_tool_schemas",\n'
+            "                    session_id=agent.session_id,\n"
+            "                    user_message=original_user_message,\n"
+            "                    conversation_history=list(messages),\n"
+            "                    schemas=tools_for_request,\n"
+            "                    model=agent.model,\n"
+            '                    platform=getattr(agent, "platform", None) or "",\n'
+            "                    provider=(\n"
+            '                        getattr(agent, "provider", None)\n'
+            '                        or getattr(agent, "model_provider", None)\n'
+            "                    ),\n"
+            "                )\n"
+            "                _schema_lists = [result for result in _schema_results if isinstance(result, list)]\n"
+            "                if _schema_lists:\n"
+            "                    if len(_schema_lists) > 1:\n"
+            "                        logger.warning(\n"
+            '                            "Multiple select_tool_schemas hooks returned schemas; using the first result"\n'
+            "                        )\n"
+            "                    return _schema_lists[0]\n"
+            "            except Exception as exc:\n"
+            '                logger.warning("select_tool_schemas hook failed; using original tools: %s", exc)\n'
+            "            return tools_for_request\n\n"
+        )
+        if marker not in conversation_text:
+            raise SystemExit("Could not find main conversation loop marker in agent/conversation_loop.py")
+        conversation_text = conversation_text.replace(marker, selector + marker, 1)
+
+    old_request_patch = (
+        "                tools_for_request = _select_tools_for_request()\n"
+        "                agent._tools_for_request = tools_for_request\n"
+        "                try:\n"
+        "                    api_kwargs = agent._build_api_kwargs(api_messages)\n"
+        "                finally:\n"
+        "                    agent._tools_for_request = None\n"
+    )
+    new_request_patch = (
+        "                tools_for_request = _select_tools_for_request()\n"
+        "                original_tools = agent.tools\n"
+        "                agent.tools = tools_for_request\n"
+        "                try:\n"
+        "                    api_kwargs = agent._build_api_kwargs(api_messages)\n"
+        "                finally:\n"
+        "                    agent.tools = original_tools\n"
+    )
+    if old_request_patch in conversation_text:
+        conversation_text = conversation_text.replace(old_request_patch, new_request_patch, 1)
+    elif "original_tools = agent.tools" not in conversation_text:
+        old = "                api_kwargs = agent._build_api_kwargs(api_messages)\n"
+        if old not in conversation_text:
+            raise SystemExit("Could not patch request-local API kwargs construction")
+        conversation_text = conversation_text.replace(old, new_request_patch, 1)
+
+    if "tool_count=len(agent.tools or [])" in conversation_text:
+        conversation_text = conversation_text.replace(
+            "tool_count=len(agent.tools or []),",
+            "tool_count=len(tools_for_request if tools_for_request is not None else (agent.tools or [])),",
+            1,
+        )
+
+    conversation_py.write_text(conversation_text, encoding="utf-8")
+    patched_files.extend([conversation_py, helpers_py])
+
+
+def patch_monolithic_core(run_agent_py: Path) -> None:
+    if not run_agent_py.exists():
+        raise SystemExit("Could not find monolithic run_agent.py source file")
+
+    run_text = run_agent_py.read_text(encoding="utf-8")
+    run_text = run_text.replace(
         "    def _active_tools_for_request(self):\n"
         '        request_tools = getattr(self, "_tools_for_request", None)\n'
-        "        return request_tools if request_tools is not None else self.tools\n\n"
+        "        return request_tools if request_tools is not None else self.tools\n\n",
+        "",
+        1,
     )
-    if marker not in run_text:
-        raise SystemExit("Could not patch AIAgent._build_api_kwargs helper")
-    run_text = run_text.replace(marker, helper + marker, 1)
     run_text = run_text.replace(
-        "        tools_for_api = self.tools\n",
         "        tools_for_api = self._active_tools_for_request()\n",
+        "        tools_for_api = self.tools\n",
         1,
     )
 
-if 'def _select_tools_for_request() -> list | None:' not in run_text:
-    marker = '        # Main conversation loop\n'
-    selector = (
-        "        def _select_tools_for_request() -> list | None:\n"
-        "            if not self.tools:\n"
-        "                return self.tools\n"
-        "            tools_for_request = list(self.tools)\n"
-        "            try:\n"
-        "                from hermes_cli.plugins import invoke_hook as _invoke_hook\n"
-        "                _schema_results = _invoke_hook(\n"
-        '                    "select_tool_schemas",\n'
-        "                    session_id=self.session_id,\n"
-        "                    user_message=original_user_message,\n"
-        "                    conversation_history=list(messages),\n"
-        "                    schemas=tools_for_request,\n"
-        "                    model=self.model,\n"
-        '                    platform=getattr(self, "platform", None) or "",\n'
-        "                    provider=(\n"
-        '                        getattr(self, "provider", None)\n'
-        '                        or getattr(self, "model_provider", None)\n'
-        "                    ),\n"
-        "                )\n"
-        "                _schema_lists = [r for r in _schema_results if isinstance(r, list)]\n"
-        "                if _schema_lists:\n"
-        "                    if len(_schema_lists) > 1:\n"
-        "                        logger.warning(\n"
-        '                            "Multiple select_tool_schemas hooks returned schemas; "\n'
-        '                            "using the first result"\n'
-        "                        )\n"
-        "                    return _schema_lists[0]\n"
-        "            except Exception as exc:\n"
-        '                logger.warning("select_tool_schemas hook failed; using original tools: %s", exc)\n'
-        "            return tools_for_request\n\n"
-    )
-    if marker not in run_text:
-        raise SystemExit("Could not find main conversation loop marker in run_agent.py")
-    run_text = run_text.replace(marker, selector + marker, 1)
+    if 'def _select_tools_for_request() -> list | None:' not in run_text:
+        marker = '        # Main conversation loop\n'
+        selector = (
+            "        def _select_tools_for_request() -> list | None:\n"
+            "            if not self.tools:\n"
+            "                return self.tools\n"
+            "            tools_for_request = list(self.tools)\n"
+            "            try:\n"
+            "                from hermes_cli.plugins import invoke_hook as _invoke_hook\n"
+            "                _schema_results = _invoke_hook(\n"
+            '                    "select_tool_schemas",\n'
+            "                    session_id=self.session_id,\n"
+            "                    user_message=original_user_message,\n"
+            "                    conversation_history=list(messages),\n"
+            "                    schemas=tools_for_request,\n"
+            "                    model=self.model,\n"
+            '                    platform=getattr(self, "platform", None) or "",\n'
+            "                    provider=(\n"
+            '                        getattr(self, "provider", None)\n'
+            '                        or getattr(self, "model_provider", None)\n'
+            "                    ),\n"
+            "                )\n"
+            "                _schema_lists = [r for r in _schema_results if isinstance(r, list)]\n"
+            "                if _schema_lists:\n"
+            "                    if len(_schema_lists) > 1:\n"
+            "                        logger.warning(\n"
+            '                            "Multiple select_tool_schemas hooks returned schemas; "\n'
+            '                            "using the first result"\n'
+            "                        )\n"
+            "                    return _schema_lists[0]\n"
+            "            except Exception as exc:\n"
+            '                logger.warning("select_tool_schemas hook failed; using original tools: %s", exc)\n'
+            "            return tools_for_request\n\n"
+        )
+        if marker not in run_text:
+            raise SystemExit("Could not find main conversation loop marker in run_agent.py")
+        run_text = run_text.replace(marker, selector + marker, 1)
 
-if "self._tools_for_request = tools_for_request" not in run_text:
-    old = "                    api_kwargs = self._build_api_kwargs(api_messages)\n"
-    new = (
+    old_request_patch = (
         "                    tools_for_request = _select_tools_for_request()\n"
         "                    self._tools_for_request = tools_for_request\n"
         "                    try:\n"
@@ -221,19 +310,42 @@ if "self._tools_for_request = tools_for_request" not in run_text:
         "                    finally:\n"
         "                        self._tools_for_request = None\n"
     )
-    if old not in run_text:
-        raise SystemExit("Could not patch request-local API kwargs construction")
-    run_text = run_text.replace(old, new, 1)
-
-if "tool_count=len(self.tools or [])" in run_text:
-    run_text = run_text.replace(
-        "tool_count=len(self.tools or []),",
-        "tool_count=len(tools_for_request if tools_for_request is not None else (self.tools or [])),",
-        1,
+    new_request_patch = (
+        "                    tools_for_request = _select_tools_for_request()\n"
+        "                    original_tools = self.tools\n"
+        "                    self.tools = tools_for_request\n"
+        "                    try:\n"
+        "                        api_kwargs = self._build_api_kwargs(api_messages)\n"
+        "                    finally:\n"
+        "                        self.tools = original_tools\n"
     )
+    if old_request_patch in run_text:
+        run_text = run_text.replace(old_request_patch, new_request_patch, 1)
+    elif "original_tools = self.tools" not in run_text:
+        old = "                    api_kwargs = self._build_api_kwargs(api_messages)\n"
+        if old not in run_text:
+            raise SystemExit("Could not patch request-local API kwargs construction")
+        run_text = run_text.replace(old, new_request_patch, 1)
 
-run_agent_py.write_text(run_text, encoding="utf-8")
-print(f"Patched Hermes core: {plugins_py} and {run_agent_py}")
+    if "tool_count=len(self.tools or [])" in run_text:
+        run_text = run_text.replace(
+            "tool_count=len(self.tools or []),",
+            "tool_count=len(tools_for_request if tools_for_request is not None else (self.tools or [])),",
+            1,
+        )
+
+    run_agent_py.write_text(run_text, encoding="utf-8")
+    patched_files.append(run_agent_py)
+
+
+if conversation_spec is not None and conversation_spec.origin and helpers_spec is not None and helpers_spec.origin:
+    patch_modular_core(Path(conversation_spec.origin), Path(helpers_spec.origin))
+elif run_agent_spec is not None and run_agent_spec.origin:
+    patch_monolithic_core(Path(run_agent_spec.origin))
+else:
+    raise SystemExit("Could not locate a supported Hermes core layout to patch")
+
+print("Patched Hermes core: " + ", ".join(str(path) for path in patched_files))
 PY
 }
 
@@ -241,20 +353,27 @@ step "Checking Hermes core selector hook"
 HOOK_STATUS="$(core_hook_status || true)"
 if [[ "$HOOK_STATUS" == "pass" ]]; then
   echo "Core selector hook is available."
+  if [[ "$PATCH_CORE" == "1" ]]; then
+    echo "Verifying request-local schema selector integration."
+    patch_core
+  fi
 elif [[ "$PATCH_CORE" == "1" ]]; then
   echo "Core selector hook is missing; patching Hermes core."
   patch_core
+else
+  echo "Core selector hook is missing. Dashboard will work, but active schema slimming needs the hook."
+fi
+
+if [[ "$PATCH_CORE" == "1" ]]; then
   "$HERMES_PYTHON" - <<'PY'
 import importlib.util
 import py_compile
 
-for name in ("hermes_cli.plugins", "run_agent"):
+for name in ("hermes_cli.plugins", "agent.conversation_loop", "agent.chat_completion_helpers", "run_agent"):
     spec = importlib.util.find_spec(name)
     if spec and spec.origin:
         py_compile.compile(spec.origin, doraise=True)
 PY
-else
-  echo "Core selector hook is missing. Dashboard will work, but active schema slimming needs the hook."
 fi
 
 step "Restarting Hermes services"
@@ -266,12 +385,13 @@ if [[ "$RESTART_SERVICES" == "1" ]] && command -v systemctl >/dev/null 2>&1; the
     systemctl --user restart hermes-gateway.service || true
   fi
 else
-  echo "Skipped service restart. Restart Hermes dashboard manually before using new API routes."
+  echo "Skipping service restart."
 fi
 
-step "Final verification"
-"$HERMES_BIN" tool-slimmer doctor
-"$ROOT_DIR/scripts/troubleshoot-hermes-tool-slimmer.sh" --quick --hermes-bin "$HERMES_BIN" --hermes-home "$HERMES_HOME"
-
-echo
-echo "Done. Open Hermes dashboard and use the Tool Slimmer tab."
+step "Final health report"
+if "$ROOT_DIR/scripts/troubleshoot-hermes-tool-slimmer.sh" --hermes-bin "$HERMES_BIN" --hermes-home "$HERMES_HOME"; then
+  echo "Install completed."
+else
+  echo "Install completed with health warnings; see report above."
+fi
+exit 0
