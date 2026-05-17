@@ -23,7 +23,10 @@ def _load_schemas(path: str | None) -> list[dict[str, Any]]:
     target = Path(path).expanduser()
     if not target.is_file():
         return []
-    data = yaml.safe_load(target.read_text())
+    try:
+        data = yaml.safe_load(target.read_text())
+    except (OSError, yaml.YAMLError):
+        return []
     if isinstance(data, dict):
         schemas = data.get("tools") or data.get("schemas")
         if isinstance(schemas, list):
@@ -32,7 +35,7 @@ def _load_schemas(path: str | None) -> list[dict[str, Any]]:
         if indexed_schemas:
             return indexed_schemas
         return []
-    return data or []
+    return data if isinstance(data, list) else []
 
 
 def _schemas_from_index(index: dict[str, Any] | None) -> list[dict[str, Any]]:
@@ -63,7 +66,10 @@ def _load_prompts(path: str | None) -> list[dict[str, Any]]:
     target = Path(path).expanduser()
     if not target.is_file():
         return []
-    data = yaml.safe_load(target.read_text())
+    try:
+        data = yaml.safe_load(target.read_text())
+    except (OSError, yaml.YAMLError):
+        return []
     if isinstance(data, dict):
         prompts = data.get("prompts")
         return prompts if isinstance(prompts, list) else []
@@ -150,6 +156,8 @@ def eval_prompts(cfg: ToolSlimmerConfig, schemas: list[dict[str, Any]], prompts:
     total_reduction = 0.0
     total_selected = 0
     for prompt in prompts:
+        if not isinstance(prompt, dict):
+            continue
         result = selector.select(str(prompt.get("text") or ""), schemas)
         metrics = reduction_metrics(cfg.mode, schemas, result.selected, result.always_included)
         expected = set(prompt.get("expected_any", []))
@@ -386,7 +394,9 @@ def handle_cli(args: argparse.Namespace) -> int:
         rows = []
         selector = ToolSelector(cfg)
         for prompt in prompts:
-            result = selector.select(prompt["text"], schemas)
+            if not isinstance(prompt, dict):
+                continue
+            result = selector.select(str(prompt.get("text") or ""), schemas)
             metrics = reduction_metrics(cfg.mode, schemas, result.selected, result.always_included)
             expected = set(prompt.get("expected_any", []))
             rows.append({"name": prompt.get("name"), "selected": result.selected_names, "expected_included": bool(expected & set(result.selected_names)) if expected else None, "metrics": metrics})

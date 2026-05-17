@@ -13,6 +13,14 @@ from .types import Schema
 LOG = logging.getLogger(__name__)
 
 
+def _load_config_for_hook() -> ToolSlimmerConfig:
+    try:
+        return load_config()
+    except Exception as exc:
+        LOG.warning("tool-slimmer config load failed; disabling selector for this request: %s", exc)
+        return ToolSlimmerConfig(enabled=False)
+
+
 def _metrics_for_selection(
     mode: str,
     schemas: list[Schema],
@@ -44,7 +52,7 @@ def select_tool_schemas_callback(
     config: ToolSlimmerConfig | None = None,
     **kwargs: Any,
 ) -> list[Schema] | None:
-    cfg = config or load_config()
+    cfg = config or _load_config_for_hook()
     if not cfg.enabled:
         return None
     try:
@@ -160,7 +168,7 @@ def select_tool_schemas_callback(
 
 
 def pre_llm_diagnostic_hook(**kwargs: Any) -> dict[str, str] | None:
-    cfg = load_config()
+    cfg = _load_config_for_hook()
     if not cfg.enabled or not cfg.dry_run:
         return None
     return {

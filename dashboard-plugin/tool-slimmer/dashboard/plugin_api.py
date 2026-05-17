@@ -7,6 +7,13 @@ from fastapi import APIRouter, Body, HTTPException, Query
 router = APIRouter()
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _load_modules():
     try:
         from hermes_tool_slimmer.cli import analyze_config, eval_markdown, eval_prompts, privacy_inventory, run_doctor
@@ -28,7 +35,7 @@ def _summarize_index(store: Any) -> dict[str, Any]:
     return {
         "path": str(store.path),
         "exists": bool(index),
-        "total_tools": int(index.get("total_tools") or 0),
+        "total_tools": _safe_int(index.get("total_tools")),
         "checksum": index.get("checksum"),
         "updated_at": updated_at,
         "documents": [
@@ -106,7 +113,7 @@ async def status() -> dict[str, Any]:
         "index": {
             "path": str(store.path),
             "exists": bool(index),
-            "total_tools": int(index.get("total_tools") or 0),
+            "total_tools": _safe_int(index.get("total_tools")),
             "checksum": index.get("checksum"),
         },
         "doctor": run_doctor(),
@@ -162,7 +169,7 @@ async def advisor(limit: int = Query(default=1000, ge=1, le=10000)) -> dict[str,
     analyze_config, _eval_markdown, _eval_prompts, _privacy_inventory, _run_doctor, load_config, IndexStore, _read_decisions, summarize_decisions = _load_modules()
     cfg = load_config()
     index = IndexStore().load() or {}
-    return {"ok": True, "advisor": analyze_config(cfg, summarize_decisions(limit=limit, require_session=True), int(index.get("total_tools") or 0))}
+    return {"ok": True, "advisor": analyze_config(cfg, summarize_decisions(limit=limit, require_session=True), _safe_int(index.get("total_tools")))}
 
 
 @router.get("/privacy")
@@ -177,6 +184,18 @@ async def eval_report() -> dict[str, Any]:
     from pathlib import Path
     import yaml
 
+    def _load_example_list(path: Path, key: str) -> list[dict[str, Any]]:
+        if not path.exists():
+            return []
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except (OSError, yaml.YAMLError):
+            return []
+        if isinstance(data, dict):
+            value = data.get(key)
+            return value if isinstance(value, list) else []
+        return data if isinstance(data, list) else []
+
     plugin_root = Path(__file__).resolve().parents[1]
     repo_root = Path(__file__).resolve().parents[3]
     schemas_path = plugin_root / "examples" / "tools.yaml"
@@ -185,7 +204,7 @@ async def eval_report() -> dict[str, Any]:
         schemas_path = repo_root / "examples" / "tools.yaml"
     if not prompts_path.exists():
         prompts_path = repo_root / "examples" / "prompts.yaml"
-    schemas = yaml.safe_load(schemas_path.read_text()).get("tools", []) if schemas_path.exists() else []
-    prompts = yaml.safe_load(prompts_path.read_text()).get("prompts", []) if prompts_path.exists() else []
+    schemas = _load_example_list(schemas_path, "tools")
+    prompts = _load_example_list(prompts_path, "prompts")
     report = eval_prompts(load_config(), schemas, prompts)
     return {"ok": True, "markdown": eval_markdown(report), "report": report}

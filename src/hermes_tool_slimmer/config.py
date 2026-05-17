@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import math
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,10 @@ import yaml
 
 
 VALID_MODES = {"eager", "keyword", "hybrid", "anthropic_tool_search"}
+_LIST_FIELDS = {"always_include", "never_defer", "disabled_tools", "disabled_toolsets"}
+_BOOL_FIELDS = {"enabled", "include_mcp_tools", "include_native_tools", "log_decisions", "fail_open", "dry_run"}
+_ANTHROPIC_LIST_FIELDS = {"never_defer"}
+_ANTHROPIC_BOOL_FIELDS = {"defer_mcp_tools", "defer_native_tools", "tool_search_supported"}
 
 
 @dataclass
@@ -46,6 +51,14 @@ class ToolSlimmerConfig:
         anthropic_raw = raw.pop("anthropic", {}) or {}
         if not isinstance(anthropic_raw, dict):
             anthropic_raw = {}
+        raw = _normalize_mapping(raw, cls.__dataclass_fields__, _LIST_FIELDS, _BOOL_FIELDS)
+        anthropic_raw = _normalize_mapping(
+            anthropic_raw,
+            AnthropicConfig.__dataclass_fields__,
+            _ANTHROPIC_LIST_FIELDS,
+            _ANTHROPIC_BOOL_FIELDS,
+            allow_none_booleans=True,
+        )
         cfg = cls(**{key: value for key, value in raw.items() if key in cls.__dataclass_fields__ and key != "anthropic"})
         cfg.anthropic = AnthropicConfig(**{key: value for key, value in anthropic_raw.items() if key in AnthropicConfig.__dataclass_fields__})
         cfg.validate()
@@ -66,6 +79,55 @@ class ToolSlimmerConfig:
             raise ValueError("tool_slimmer.min_estimated_reduction_percent must be finite")
         if self.min_estimated_reduction_percent < 0:
             raise ValueError("tool_slimmer.min_estimated_reduction_percent must be >= 0")
+
+
+def _normalize_string_list(value: Any, field_name: str) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    raise ValueError(f"tool_slimmer.{field_name} must be a string or list")
+
+
+def _normalize_aliases(value: Any) -> dict[str, list[str]]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("tool_slimmer.aliases must be a mapping")
+    aliases: dict[str, list[str]] = {}
+    for key, values in value.items():
+        aliases[str(key)] = _normalize_string_list(values, f"aliases.{key}")
+    return aliases
+
+
+def _normalize_mapping(
+    raw: dict[str, Any],
+    allowed_fields: Collection[str],
+    list_fields: set[str],
+    bool_fields: set[str],
+    *,
+    allow_none_booleans: bool = False,
+) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    for key, value in raw.items():
+        if key not in allowed_fields:
+            continue
+        if key in list_fields:
+            normalized[key] = _normalize_string_list(value, key)
+        elif key == "aliases":
+            normalized[key] = _normalize_aliases(value)
+        elif key in bool_fields:
+            if value is None and allow_none_booleans:
+                normalized[key] = None
+            elif isinstance(value, bool):
+                normalized[key] = value
+            else:
+                raise ValueError(f"tool_slimmer.{key} must be a boolean")
+        else:
+            normalized[key] = value
+    return normalized
 
 
 def hermes_home() -> Path:

@@ -1,5 +1,6 @@
 import json
 import importlib.util
+import shutil
 import sys
 import types
 from pathlib import Path
@@ -8,7 +9,7 @@ import pytest
 
 from hermes_tool_slimmer.commands import handle_slash_command
 from hermes_tool_slimmer.config import ToolSlimmerConfig
-from hermes_tool_slimmer.cli import _load_schemas, _tool_names
+from hermes_tool_slimmer.cli import _load_prompts, _load_schemas, _tool_names
 from hermes_tool_slimmer.integration import maybe_register_selector_hook, select_tool_schemas_callback
 from hermes_tool_slimmer.metrics import read_decisions, summarize_decisions
 from hermes_tool_slimmer.index_store import IndexStore
@@ -96,6 +97,18 @@ def test_cli_load_schemas_accepts_tool_index_documents(tmp_path):
     ]
 
 
+def test_cli_loaders_handle_malformed_yaml_and_scalar_payloads(tmp_path):
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("schemas:\n  - [bad\n")
+    scalar = tmp_path / "scalar.yaml"
+    scalar.write_text("plain string")
+
+    assert _load_schemas(str(bad)) == []
+    assert _load_prompts(str(bad)) == []
+    assert _load_schemas(str(scalar)) == []
+    assert _load_prompts(str(scalar)) == []
+
+
 def test_cli_analyze_config_and_eval(tmp_path, capsys):
     from argparse import Namespace
     from hermes_tool_slimmer.cli import handle_cli
@@ -132,6 +145,22 @@ def test_cli_eval_handles_non_yaml_prompt_payload(tmp_path, capsys):
     assert out["summary"]["prompts"] == 0
 
 
+def test_cli_eval_and_benchmark_skip_non_dict_prompt_rows(tmp_path, capsys):
+    from argparse import Namespace
+    from hermes_tool_slimmer.cli import handle_cli
+
+    prompts = tmp_path / "prompts.yaml"
+    prompts.write_text("- plain string\n- name: search\n  text: search files\n")
+
+    assert handle_cli(Namespace(command="eval", config=None, schemas=None, prompts=str(prompts), markdown=False)) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["summary"]["prompts"] == 1
+
+    assert handle_cli(Namespace(command="benchmark", config=None, schemas=None, prompts=str(prompts))) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert len(out["benchmarks"]) == 1
+
+
 def test_doctor_reports_missing_explicit_config_as_failure(tmp_path):
     from hermes_tool_slimmer.cli import run_doctor
 
@@ -163,6 +192,16 @@ def test_doctor_validates_always_include_against_index(monkeypatch, tmp_path):
 
 def test_integration_contract_returns_none_when_disabled():
     out = select_tool_schemas_callback("read", [], [{"name": "read_file"}], "model", "platform", config=ToolSlimmerConfig(enabled=False))
+    assert out is None
+
+
+def test_integration_hook_fails_open_on_malformed_config(monkeypatch, tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("tool_slimmer:\n  mode: definitely_bad\n")
+    monkeypatch.setenv("HERMES_CONFIG", str(path))
+
+    out = select_tool_schemas_callback("read", [], [{"name": "read_file"}], "model", "platform")
+
     assert out is None
 
 
@@ -484,3 +523,33 @@ def test_dashboard_plugin_api_reports_status_and_summary(monkeypatch, tmp_path):
     assert rebuilt.json()["index"]["total_tools"] == 2
     assert index_after.json()["index"]["exists"] is True
     assert index_after.json()["index"]["documents"][0]["name"] == "read_file"
+
+
+def test_dashboard_eval_report_tolerates_malformed_example_yaml(monkeypatch, tmp_path):
+    fastapi = pytest.importorskip("fastapi")
+    testclient = pytest.importorskip("fastapi.testclient")
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("HERMES_CONFIG", raising=False)
+    source = Path(__file__).resolve().parents[1] / "dashboard-plugin" / "tool-slimmer" / "dashboard" / "plugin_api.py"
+    plugin_root = tmp_path / "plugin"
+    dashboard = plugin_root / "dashboard"
+    examples = plugin_root / "examples"
+    dashboard.mkdir(parents=True)
+    examples.mkdir()
+    shutil.copy(source, dashboard / "plugin_api.py")
+    (examples / "tools.yaml").write_text("tools:\n  - [bad\n")
+    (examples / "prompts.yaml").write_text("plain string")
+
+    spec = importlib.util.spec_from_file_location("tool_slimmer_dashboard_plugin_bad_examples", dashboard / "plugin_api.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    app = fastapi.FastAPI()
+    app.include_router(module.router)
+    with testclient.TestClient(app) as client:
+        eval_report = client.get("/eval-report")
+
+    assert eval_report.status_code == 200
+    assert eval_report.json()["report"]["summary"]["prompts"] == 0

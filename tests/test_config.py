@@ -42,6 +42,33 @@ def test_config_ignores_invalid_anthropic_section_type():
     assert cfg.anthropic.variant == "bm25"
 
 
+def test_config_normalizes_string_list_shorthand():
+    cfg = ToolSlimmerConfig.from_mapping(
+        {
+            "always_include": "terminal",
+            "disabled_tools": ["danger", 123],
+            "aliases": {"repo": "repository"},
+            "anthropic": {"never_defer": "read_file"},
+        }
+    )
+
+    assert cfg.always_include == ["terminal"]
+    assert cfg.disabled_tools == ["danger", "123"]
+    assert cfg.aliases == {"repo": ["repository"]}
+    assert cfg.anthropic.never_defer == ["read_file"]
+
+
+def test_config_rejects_invalid_structured_types():
+    with pytest.raises(ValueError, match="always_include"):
+        ToolSlimmerConfig.from_mapping({"always_include": {"terminal": True}})
+    with pytest.raises(ValueError, match="aliases"):
+        ToolSlimmerConfig.from_mapping({"aliases": ["repo"]})
+    with pytest.raises(ValueError, match="enabled"):
+        ToolSlimmerConfig.from_mapping({"enabled": "yes"})
+    with pytest.raises(ValueError, match="tool_search_supported"):
+        ToolSlimmerConfig.from_mapping({"anthropic": {"tool_search_supported": "yes"}})
+
+
 def test_config_invalid_mode():
     with pytest.raises(ValueError):
         ToolSlimmerConfig.from_mapping({"mode": "bad"})
