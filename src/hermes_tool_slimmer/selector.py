@@ -14,6 +14,8 @@ from .types import Schema, SelectionResult, ToolDocument
 
 LOG = logging.getLogger(__name__)
 
+SAFETY_TOOL_NAMES = ("tool_slimmer_request_full_tools",)
+
 BUILTIN_ALIASES = {
     "browse": ["browser", "navigate", "url", "web", "website", "page"],
     "browsing": ["browser", "navigate", "url", "web", "website", "page"],
@@ -85,7 +87,7 @@ class ToolSelector:
         selected: list[Schema] = []
         selected_names: set[str] = set()
         always_present: list[str] = []
-        for name in self.config.always_include:
+        for name in _always_include_names(self.config.always_include):
             if name in by_name and name not in selected_names:
                 selected.append(by_name[name])
                 selected_names.add(name)
@@ -155,6 +157,16 @@ def expand_query_tokens(tokens: list[str], configured_aliases: dict[str, list[st
                 expanded.append(value)
                 seen.add(value)
     return expanded, alias_terms
+
+
+def _always_include_names(configured: Iterable[str]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for name in [*configured, *SAFETY_TOOL_NAMES]:
+        if name not in seen:
+            names.append(name)
+            seen.add(name)
+    return names
 
 
 def select_schemas(user_message: str, schemas: list[Schema], config: ToolSlimmerConfig | None = None, **kwargs: object) -> list[Schema]:

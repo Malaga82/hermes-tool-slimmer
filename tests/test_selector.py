@@ -25,6 +25,18 @@ def test_selector_respects_top_k_after_always_includes():
     assert result.selected_names[0] == "terminal"
 
 
+def test_selector_always_includes_full_tools_request_when_available():
+    cfg = ToolSlimmerConfig(top_k=1, always_include=[])
+    schemas = [
+        {"name": "tool_slimmer_request_full_tools", "toolset": "tool-slimmer", "description": "Request full tools"},
+        {"name": "search_files", "toolset": "native", "description": "Search files in repo"},
+        {"name": "terminal", "toolset": "native", "description": "Run shell commands"},
+    ]
+    result = ToolSelector(cfg).select("search files", schemas)
+    assert result.selected_names == ["tool_slimmer_request_full_tools", "search_files"]
+    assert result.always_included == ["tool_slimmer_request_full_tools"]
+
+
 def test_selector_does_not_select_disabled_tools():
     cfg = ToolSlimmerConfig(top_k=5, always_include=[], disabled_toolsets=["github"])
     result = ToolSelector(cfg).select("github code search", SCHEMAS)

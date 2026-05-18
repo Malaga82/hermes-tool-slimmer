@@ -9,9 +9,15 @@ from .config import ToolSlimmerConfig, load_config
 from .index_store import IndexStore
 from .metrics import record_decision, reduction_metrics
 from .selector import ToolSelector
+from .tools import FULL_TOOLS_REQUEST_MARKER
 from .types import Schema
 
 LOG = logging.getLogger(__name__)
+
+FALLBACK_INSTRUCTION = (
+    "Tool Slimmer may hide tools. If a skill or task requires a missing tool, "
+    "call tool_slimmer_request_full_tools; do not invent replacement tools."
+)
 
 
 def _load_config_for_hook() -> ToolSlimmerConfig:
@@ -56,6 +62,27 @@ def _metrics_for_selection(
     return metrics
 
 
+def _contains_full_tools_request(value: Any) -> bool:
+    if isinstance(value, dict):
+        if value.get(FULL_TOOLS_REQUEST_MARKER) is True:
+            return True
+        return any(_contains_full_tools_request(item) for item in value.values())
+    if isinstance(value, list | tuple):
+        return any(_contains_full_tools_request(item) for item in value)
+    if isinstance(value, str):
+        return FULL_TOOLS_REQUEST_MARKER in value
+    return False
+
+
+def _full_tools_requested(conversation_history: list[Any] | None) -> bool:
+    for item in reversed(conversation_history or []):
+        if _contains_full_tools_request(item):
+            return True
+        if isinstance(item, dict) and item.get("role") in {"assistant", "user"}:
+            return False
+    return False
+
+
 def select_tool_schemas_callback(
     user_message: str,
     conversation_history: list[Any] | None,
@@ -73,6 +100,28 @@ def select_tool_schemas_callback(
     try:
         started = perf_counter()
         _sync_live_index(schemas, cfg.min_total_tools)
+        if _full_tools_requested(conversation_history):
+            metrics = reduction_metrics(cfg.mode, schemas, schemas, [])
+            metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+            metrics["skipped"] = True
+            metrics["skip_reason"] = "full_tools_requested"
+            if cfg.log_decisions:
+                LOG.info("tool-slimmer full schema fallback", extra={"tool_slimmer": metrics})
+                try:
+                    record_decision(
+                        metrics,
+                        {
+                            "provider": provider,
+                            "model": model,
+                            "platform": platform,
+                            "session_id": session_id,
+                            "dry_run": cfg.dry_run,
+                            "schema_count": len(schemas),
+                        },
+                    )
+                except Exception as exc:
+                    LOG.warning("tool-slimmer decision logging failed: %s", exc)
+            return None if cfg.dry_run else schemas
         if len(schemas) < cfg.min_total_tools:
             metrics = reduction_metrics(cfg.mode, schemas, schemas, [])
             metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
@@ -185,10 +234,13 @@ def select_tool_schemas_callback(
 
 def pre_llm_diagnostic_hook(**kwargs: Any) -> dict[str, str] | None:
     cfg = _load_config_for_hook()
-    if not cfg.enabled or not cfg.dry_run:
+    if not cfg.enabled:
         return None
+    if not cfg.dry_run:
+        return {"context": FALLBACK_INSTRUCTION}
     return {
         "context": (
+            f"{FALLBACK_INSTRUCTION} "
             "Hermes Tool Slimmer dry-run is enabled; "
             "schema selection is diagnostic-only for this turn."
         )

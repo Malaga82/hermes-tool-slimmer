@@ -2,7 +2,7 @@
 
 ## 1. Install
 
-Use Tool Slimmer v0.3.9+ with Hermes Agent v0.14.0. Older Tool Slimmer releases are not functionally compatible with Hermes v0.14.0 active schema slimming because the provider request construction code moved.
+Use Tool Slimmer v0.4.0+ with Hermes Agent v0.14.0. Older Tool Slimmer releases are not functionally compatible with Hermes v0.14.0 active schema slimming because the provider request construction code moved.
 
 ```bash
 scripts/install-hermes-tool-slimmer.sh
@@ -38,6 +38,8 @@ tool_slimmer:
 Start with `dry_run: true`. This lets you inspect selections without changing provider requests.
 
 `min_total_tools` and `min_estimated_reduction_percent` are low-overhead guardrails. `min_total_tools` skips catalogs with fewer than that many tools; equality is allowed to slim. These guardrails are especially useful for cron jobs and other short tool catalogs where the schema savings may not justify changing the request.
+
+Tool Slimmer keeps `tool_slimmer_request_full_tools` available in trimmed requests. If a skill needs a hidden tool, the model can call that fallback tool and the next model request will receive the full Hermes tool schema list.
 
 ## 3. Check installation
 

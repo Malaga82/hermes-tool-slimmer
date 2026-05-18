@@ -10,19 +10,21 @@ import pytest
 from hermes_tool_slimmer.commands import handle_slash_command
 from hermes_tool_slimmer.config import ToolSlimmerConfig
 from hermes_tool_slimmer.cli import _load_prompts, _load_schemas, _tool_names
-from hermes_tool_slimmer.integration import maybe_register_selector_hook, select_tool_schemas_callback
+from hermes_tool_slimmer.integration import FALLBACK_INSTRUCTION, maybe_register_selector_hook, pre_llm_diagnostic_hook, select_tool_schemas_callback
 from hermes_tool_slimmer.metrics import read_decisions, summarize_decisions
 from hermes_tool_slimmer.index_store import IndexStore
-from hermes_tool_slimmer.tools import tool_slimmer_select, tool_slimmer_status
+from hermes_tool_slimmer.tools import FULL_TOOLS_REQUEST_MARKER, tool_slimmer_request_full_tools, tool_slimmer_select, tool_slimmer_status
 
 
 def test_plugin_handlers_return_json_strings(monkeypatch, tmp_path):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     status = tool_slimmer_status({})
     select = tool_slimmer_select({"query": "read", "schemas": [{"name": "read_file", "description": "Read"}]})
+    request_full = tool_slimmer_request_full_tools({"reason": "missing skill tool"})
     slash = handle_slash_command("select read", schemas=[{"name": "read_file", "description": "Read"}])
     assert json.loads(status)["ok"] is True
     assert json.loads(select)["ok"] is True
+    assert json.loads(request_full)[FULL_TOOLS_REQUEST_MARKER] is True
     assert json.loads(slash)["ok"] is True
 
 
@@ -245,6 +247,59 @@ def test_selector_records_decision_metrics(monkeypatch, tmp_path):
     assert summary["totals"]["events"] == 1
     assert summary["totals"]["approx_tokens_saved"] > 0
     assert summarize_decisions(require_session=True)["totals"]["events"] == 1
+
+
+def test_full_tools_request_marker_bypasses_slimming(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    schemas = [
+        {"name": "read_file", "description": "Read files"},
+        {"name": "search_files", "description": "Search files"},
+        {"name": "terminal", "description": "Run commands"},
+    ]
+    conversation_history = [
+        {
+            "role": "tool",
+            "content": json.dumps({FULL_TOOLS_REQUEST_MARKER: True}),
+        }
+    ]
+
+    out = select_tool_schemas_callback(
+        "search",
+        conversation_history,
+        schemas,
+        "model",
+        "tui",
+        session_id="session-1",
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0),
+    )
+
+    assert out == schemas
+    event = read_decisions()[0]
+    assert event["metrics"]["skipped"] is True
+    assert event["metrics"]["skip_reason"] == "full_tools_requested"
+
+
+def test_full_tools_request_marker_is_one_shot(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    schemas = [
+        {"name": "read_file", "description": "Read files"},
+        {"name": "search_files", "description": "Search files"},
+    ]
+    conversation_history = [
+        {"role": "tool", "content": json.dumps({FULL_TOOLS_REQUEST_MARKER: True})},
+        {"role": "assistant", "content": "Done with full tools."},
+    ]
+
+    out = select_tool_schemas_callback(
+        "search",
+        conversation_history,
+        schemas,
+        "model",
+        "tui",
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0, log_decisions=False),
+    )
+
+    assert out == [schemas[1]]
 
 
 def test_selector_syncs_index_from_live_request_schemas(monkeypatch, tmp_path):
@@ -478,6 +533,28 @@ def test_selector_hook_registration_uses_hermes_valid_hooks_fallback(monkeypatch
 
     assert maybe_register_selector_hook(Ctx()) is False
     assert calls == ["pre_llm_call"]
+
+
+def test_pre_llm_hook_instructs_missing_tool_fallback(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("HERMES_CONFIG", raising=False)
+
+    out = pre_llm_diagnostic_hook()
+
+    assert out is not None
+    assert out["context"] == FALLBACK_INSTRUCTION
+
+
+def test_pre_llm_hook_keeps_dry_run_diagnostic(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("tool_slimmer:\n  dry_run: true\n")
+    monkeypatch.setenv("HERMES_CONFIG", str(config_path))
+
+    out = pre_llm_diagnostic_hook()
+
+    assert out is not None
+    assert FALLBACK_INSTRUCTION in out["context"]
+    assert "dry-run" in out["context"]
 
 
 def test_doctor_reports_invalid_config_without_crashing(tmp_path):

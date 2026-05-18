@@ -7,6 +7,8 @@ from .config import ToolSlimmerConfig, load_config
 from .index_store import IndexStore
 from .selector import ToolSelector
 
+FULL_TOOLS_REQUEST_MARKER = "tool_slimmer_full_tools_requested"
+
 
 def _json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, sort_keys=True)
@@ -65,6 +67,21 @@ def tool_slimmer_status(args: dict, **kwargs: Any) -> str:
         return _json({"ok": True, "enabled": cfg.enabled, "mode": cfg.mode, "top_k": cfg.top_k, "index": {"path": str(store.path), "exists": index is not None, "total_tools": (index or {}).get("total_tools", 0)}})
     except Exception as exc:
         return _json({"ok": False, "error": str(exc)})
+
+
+def tool_slimmer_request_full_tools(args: dict, **kwargs: Any) -> str:
+    reason = args.get("reason") if isinstance(args, dict) else None
+    payload: dict[str, Any] = {
+        "ok": True,
+        FULL_TOOLS_REQUEST_MARKER: True,
+        "message": (
+            "Full tool schemas requested for the next model call. Retry the original task "
+            "after the tool list reloads; do not build substitute tools."
+        ),
+    }
+    if reason:
+        payload["reason"] = str(reason)
+    return _json(payload)
 
 
 def tool_slimmer_select(args: dict, **kwargs: Any) -> str:

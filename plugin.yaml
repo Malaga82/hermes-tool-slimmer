@@ -1,9 +1,10 @@
 name: tool-slimmer
-version: 0.3.9
+version: 0.4.0
 description: Reduce Hermes tool-schema overhead with keyword/hybrid tool selection and provider-aware Tool Search support.
 provides_tools:
   - tool_slimmer_select
   - tool_slimmer_status
+  - tool_slimmer_request_full_tools
 provides_hooks:
   - pre_llm_call
 optional_hooks:

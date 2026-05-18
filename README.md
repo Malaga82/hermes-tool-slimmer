@@ -26,7 +26,7 @@ Dashboard headline totals count real Hermes session events by default. Probe eve
 
 ## Install
 
-Hermes Tool Slimmer v0.3.9+ is the supported line for Hermes Agent v0.14.0. Older Tool Slimmer releases can load as dashboard/diagnostic plugins on v0.14.0, but they do not provide active schema slimming because Hermes moved the request construction path.
+Hermes Tool Slimmer v0.4.0+ is the supported line for Hermes Agent v0.14.0. Older Tool Slimmer releases can load as dashboard/diagnostic plugins on v0.14.0, but they do not provide active schema slimming because Hermes moved the request construction path.
 
 ```bash
 scripts/install-hermes-tool-slimmer.sh
@@ -120,7 +120,7 @@ Slash commands:
 
 ## Integration status
 
-The standalone plugin registers diagnostics tools, slash commands, CLI commands, a dry-run `pre_llm_call` diagnostic hook, and a `select_tool_schemas` callback when Hermes core supports it.
+The standalone plugin registers diagnostics tools, the full-tool fallback tool, slash commands, CLI commands, a short `pre_llm_call` fallback instruction, and a `select_tool_schemas` callback when Hermes core supports it.
 
 Supported/target core surfaces:
 
@@ -133,6 +133,7 @@ If none exists, active schema slimming requires the installer/core patch to add 
 ## Safety model
 
 - `always_include` tools are selected first when present and not already disabled by Hermes.
+- `tool_slimmer_request_full_tools` is always kept available when Hermes has registered it. If a skill or task needs a hidden tool, the model can call it to make the next provider request use the full schema list instead of inventing a substitute workflow.
 - `top_k` applies after `always_include`; always-included tools do not count against the `top_k` budget. `top_k: 0` is treated as an explicit request to select no ranked tools, so it does not fail open to the full catalog.
 - `disabled_tools`, `disabled_toolsets`, `include_mcp_tools`, and `include_native_tools` are respected before ranking.
 - `min_total_tools` skips catalogs with fewer than that many tools before ranking; equality is allowed to slim.

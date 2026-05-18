@@ -17,3 +17,20 @@ SELECT_SCHEMA = {
         "required": ["query"],
     },
 }
+
+REQUEST_FULL_TOOLS_SCHEMA = {
+    "name": "tool_slimmer_request_full_tools",
+    "description": (
+        "Request the full Hermes tool schema set for the next model call when "
+        "a required tool is missing from the trimmed tool list."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "reason": {
+                "type": "string",
+                "description": "Short explanation of the missing tool or skill requirement.",
+            }
+        },
+    },
+}
