@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.3 - 2026-05-19
+
+Installer reliability release.
+
+### Changed
+
+- Prefer the Hermes virtualenv launcher at `$HOME/.hermes/hermes-agent/venv/bin/hermes` when install and troubleshooting scripts need a Hermes executable.
+- Document the venv launcher path for Hermes Agent-assisted installs and repairs.
+- Run the troubleshooting script through `bash` from the installer so executable-bit restrictions do not block the final health report.
+
 ## 0.2.0 - 2026-05-15
 
 Dashboard and operations release.
