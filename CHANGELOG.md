@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.6 - 2026-05-19
+
+Dashboard git-install compatibility release.
+
+### Changed
+
+- The repository root now includes the Hermes runtime plugin entry point and dashboard files, matching Hermes dashboard git-install expectations.
+- Git checkouts installed at `$HERMES_HOME/plugins/tool-slimmer` now stay clean after repair, so the dashboard can show `Source: git` and keep using `git pull`.
+- Mypy configuration now uses explicit package bases so the root Hermes plugin entry point can coexist with the `src/` Python package layout.
+
 ## 0.4.5 - 2026-05-19
 
 Dashboard installer compatibility release.
