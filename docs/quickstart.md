@@ -4,6 +4,18 @@
 
 Use Tool Slimmer v0.4.0+ with Hermes Agent v0.14.0. Older Tool Slimmer releases are not functionally compatible with Hermes v0.14.0 active schema slimming because the provider request construction code moved.
 
+### Dashboard Install
+
+On Hermes builds with dashboard plugin repair support, open the dashboard **Plugins** page, paste this into the install field, and keep **Enable after install** on:
+
+```text
+alias8818/hermes-tool-slimmer
+```
+
+The dashboard installer clones the repo to `~/.hermes/plugins/tool-slimmer`, runs the Tool Slimmer repair installer with `--no-restart`, and preserves the git checkout so the dashboard **Update** button can use `git pull` later. Restart the gateway after install or update so active schema slimming uses the patched selector hook.
+
+### Terminal Install
+
 Open a terminal on the machine where Hermes is installed:
 
 ```bash

@@ -101,11 +101,16 @@ fi
 step "Installing dashboard/user plugin files"
 TARGET_DIR="$HERMES_HOME/plugins/$PLUGIN_NAME"
 TMP_DIR="$HERMES_HOME/plugins/.${PLUGIN_NAME}.tmp.$$"
+PLUGIN_SRC="$ROOT_DIR/dashboard-plugin/$PLUGIN_NAME"
 mkdir -p "$HERMES_HOME/plugins"
-rm -rf "$TMP_DIR"
-cp -R "$ROOT_DIR/dashboard-plugin/$PLUGIN_NAME" "$TMP_DIR"
-rm -rf "$TARGET_DIR"
-mv "$TMP_DIR" "$TARGET_DIR"
+if [[ "$(readlink -f "$ROOT_DIR")" == "$(readlink -f "$TARGET_DIR" 2>/dev/null || printf '%s' "$TARGET_DIR")" ]]; then
+  cp -R "$PLUGIN_SRC"/. "$TARGET_DIR"/
+else
+  rm -rf "$TMP_DIR"
+  cp -R "$PLUGIN_SRC" "$TMP_DIR"
+  rm -rf "$TARGET_DIR"
+  mv "$TMP_DIR" "$TARGET_DIR"
+fi
 echo "Installed: $TARGET_DIR"
 
 step "Enabling Hermes plugin"

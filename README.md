@@ -28,6 +28,14 @@ Dashboard headline totals count real Hermes session events by default. Probe eve
 
 Hermes Tool Slimmer v0.4.0+ is the supported line for Hermes Agent v0.14.0. Older Tool Slimmer releases can load as dashboard/diagnostic plugins on v0.14.0, but they do not provide active schema slimming because Hermes moved the request construction path.
 
+On Hermes builds with dashboard plugin repair support, you can install from the dashboard **Plugins** page by pasting:
+
+```text
+alias8818/hermes-tool-slimmer
+```
+
+That path clones the repo to `~/.hermes/plugins/tool-slimmer`, runs the same deterministic repair installer with `--no-restart`, and preserves the git checkout so the dashboard **Update** button can use `git pull` later. Restart the gateway after dashboard install or update so active schema slimming uses the patched selector hook.
+
 From a terminal on the machine that runs Hermes:
 
 ```bash

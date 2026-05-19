@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.5 - 2026-05-19
+
+Dashboard installer compatibility release.
+
+### Changed
+
+- The installer now supports being run from an in-place dashboard git checkout at `$HERMES_HOME/plugins/tool-slimmer` by overlaying the runtime plugin files without deleting the checkout, preserving future `git pull` updates from the plugin page.
+- Plugin and dashboard manifest versions now track the package release version.
+
 ## 0.4.4 - 2026-05-19
 
 Dashboard index reliability release.
