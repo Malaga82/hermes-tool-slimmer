@@ -2,8 +2,18 @@
 set -euo pipefail
 
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-HERMES_BIN="${HERMES_BIN:-$(command -v hermes || true)}"
 QUICK=0
+
+default_hermes_bin() {
+  local venv_bin="$HERMES_HOME/hermes-agent/venv/bin/hermes"
+  if [[ -x "$venv_bin" ]]; then
+    printf '%s\n' "$venv_bin"
+    return
+  fi
+  command -v hermes || true
+}
+
+HERMES_BIN="${HERMES_BIN:-$(default_hermes_bin)}"
 
 usage() {
   cat <<'USAGE'
@@ -14,7 +24,7 @@ Usage:
 
 Options:
   --quick            Shorter report for installer output.
-  --hermes-bin PATH  Hermes executable to use. Defaults to `command -v hermes`.
+  --hermes-bin PATH  Hermes executable to use. Defaults to ~/.hermes/hermes-agent/venv/bin/hermes when present, then `command -v hermes`.
   --hermes-home PATH Hermes home directory. Defaults to ~/.hermes.
   -h, --help         Show this help.
 USAGE

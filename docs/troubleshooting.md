@@ -12,14 +12,26 @@ If the repo is somewhere else, replace `/tmp/hermes-tool-slimmer` with that path
 
 Using `bash ...` avoids needing the script executable bit. If the environment still blocks it, approve that exact command in the approval prompt.
 
+If `hermes tool-slimmer doctor` says `invalid choice: 'tool-slimmer'`, check whether you are using the source-checkout launcher instead of the venv launcher. Prefer:
+
+```bash
+$HOME/.hermes/hermes-agent/venv/bin/hermes tool-slimmer doctor
+```
+
+For reinstall/repair, force that same launcher:
+
+```bash
+HERMES_BIN="$HOME/.hermes/hermes-agent/venv/bin/hermes" bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
+```
+
 If Hermes Agent is handling the install, tell it:
 
 ```text
 The repo is downloaded. Continue by running:
-bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
+HERMES_BIN="$HOME/.hermes/hermes-agent/venv/bin/hermes" bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
 If this command is blocked, request approval for that exact command.
 After it runs, verify with:
-hermes tool-slimmer doctor
+$HOME/.hermes/hermes-agent/venv/bin/hermes tool-slimmer doctor
 ```
 
 ## Dashboard savings look too high

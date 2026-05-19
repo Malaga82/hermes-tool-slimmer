@@ -38,6 +38,14 @@ bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
 
 Use the actual unpacked repo path if it is not `/tmp/hermes-tool-slimmer`. This failure mode is an execution approval problem; the remaining install work is still the normal package install, plugin enablement, core patch check, service restart, and doctor report.
 
+If there are multiple `hermes` launchers, prefer the venv launcher:
+
+```bash
+HERMES_BIN="$HOME/.hermes/hermes-agent/venv/bin/hermes" bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
+```
+
+The source-checkout launcher may use system Python and fail to import packages installed into the Hermes venv.
+
 If the approval layer asks what this command does, the answer is: installs the Python package into the Hermes virtual environment, copies the dashboard plugin into `~/.hermes/plugins/tool-slimmer`, enables the plugin, applies the Hermes selector-hook patch when needed, restarts Hermes dashboard/gateway services when present, and runs `doctor`.
 
 ### If Hermes Agent is installing it for you
@@ -47,10 +55,10 @@ Give Hermes Agent this prompt:
 ```text
 Install Hermes Tool Slimmer from https://github.com/alias8818/hermes-tool-slimmer.
 After downloading the repo, run:
-bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
+HERMES_BIN="$HOME/.hermes/hermes-agent/venv/bin/hermes" bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
 If the environment asks for approval to run that script, request approval for that exact command.
 Then verify with:
-hermes tool-slimmer doctor
+$HOME/.hermes/hermes-agent/venv/bin/hermes tool-slimmer doctor
 ```
 
 If Hermes Agent says it downloaded or unpacked the repo but installation is not complete, the next step is usually only the `bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh` command above.

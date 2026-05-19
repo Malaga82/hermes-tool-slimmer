@@ -35,10 +35,18 @@ bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
 
 That is the same installer. The block is environmental, not a dashboard plugin failure.
 
+If there are multiple `hermes` binaries, force the venv launcher:
+
+```bash
+HERMES_BIN="$HOME/.hermes/hermes-agent/venv/bin/hermes" bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
+```
+
+This keeps the plugin install and Hermes CLI command in the same Python environment.
+
 After install, verify:
 
 ```bash
-hermes tool-slimmer doctor
+$HOME/.hermes/hermes-agent/venv/bin/hermes tool-slimmer doctor
 ```
 
 If you only want a health report:

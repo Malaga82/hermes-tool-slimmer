@@ -4,9 +4,19 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLUGIN_NAME="tool-slimmer"
 HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
-HERMES_BIN="${HERMES_BIN:-$(command -v hermes || true)}"
 PATCH_CORE=1
 RESTART_SERVICES=1
+
+default_hermes_bin() {
+  local venv_bin="$HERMES_HOME/hermes-agent/venv/bin/hermes"
+  if [[ -x "$venv_bin" ]]; then
+    printf '%s\n' "$venv_bin"
+    return
+  fi
+  command -v hermes || true
+}
+
+HERMES_BIN="${HERMES_BIN:-$(default_hermes_bin)}"
 
 usage() {
   cat <<'USAGE'
@@ -18,7 +28,7 @@ Usage:
 Options:
   --no-core-patch     Do not patch Hermes core if select_tool_schemas is missing.
   --no-restart        Do not restart hermes-dashboard/hermes-gateway systemd user services.
-  --hermes-bin PATH   Hermes executable to use. Defaults to `command -v hermes`.
+  --hermes-bin PATH   Hermes executable to use. Defaults to ~/.hermes/hermes-agent/venv/bin/hermes when present, then `command -v hermes`.
   --hermes-home PATH  Hermes home directory. Defaults to ~/.hermes.
   -h, --help          Show this help.
 USAGE
@@ -389,7 +399,7 @@ else
 fi
 
 step "Final health report"
-if "$ROOT_DIR/scripts/troubleshoot-hermes-tool-slimmer.sh" --hermes-bin "$HERMES_BIN" --hermes-home "$HERMES_HOME"; then
+if bash "$ROOT_DIR/scripts/troubleshoot-hermes-tool-slimmer.sh" --hermes-bin "$HERMES_BIN" --hermes-home "$HERMES_HOME"; then
   echo "Install completed."
 else
   echo "Install completed with health warnings; see report above."

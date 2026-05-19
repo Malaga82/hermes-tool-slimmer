@@ -58,15 +58,23 @@ bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
 
 If the repo was unpacked somewhere else, replace `/tmp/hermes-tool-slimmer` with that directory. A block at this step means the environment denied running the script; it does not mean Hermes config or Tool Slimmer source is broken.
 
+If the machine has multiple `hermes` launchers, use the Hermes venv launcher:
+
+```bash
+HERMES_BIN="$HOME/.hermes/hermes-agent/venv/bin/hermes" bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
+```
+
+This avoids installing the package into one Python environment while running Hermes from another.
+
 If Hermes Agent is doing the install for you, give it this instruction:
 
 ```text
 Install Hermes Tool Slimmer from https://github.com/alias8818/hermes-tool-slimmer.
 After downloading the repo, run:
-bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
+HERMES_BIN="$HOME/.hermes/hermes-agent/venv/bin/hermes" bash /tmp/hermes-tool-slimmer/scripts/install-hermes-tool-slimmer.sh
 If the environment asks for approval to run that script, request approval for that exact command.
 Then verify with:
-hermes tool-slimmer doctor
+$HOME/.hermes/hermes-agent/venv/bin/hermes tool-slimmer doctor
 ```
 
 For a guided setup, see [`docs/quickstart.md`](docs/quickstart.md). For the Hermes dashboard page, see [`docs/dashboard-plugin.md`](docs/dashboard-plugin.md).
