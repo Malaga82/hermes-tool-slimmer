@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from time import perf_counter
 from typing import Any
 
@@ -18,6 +19,8 @@ FALLBACK_INSTRUCTION = (
     "Tool Slimmer may hide tools. If a skill or task requires a missing tool, "
     "call tool_slimmer_request_full_tools; do not invent replacement tools."
 )
+
+_TOOL_NAME_RE = re.compile(r"\b[a-z][a-z0-9_]{2,}\b")
 
 
 def _load_config_for_hook() -> ToolSlimmerConfig:
@@ -77,12 +80,75 @@ def _contains_full_tools_request(value: Any) -> bool:
 
 
 def _full_tools_requested(conversation_history: list[Any] | None) -> bool:
-    for item in reversed(conversation_history or []):
+    history = conversation_history or []
+    last_marker_index: int | None = None
+    for index, item in enumerate(history):
         if _contains_full_tools_request(item):
-            return True
-        if isinstance(item, dict) and item.get("role") == "user":
-            return False
+            last_marker_index = index
+    if last_marker_index is None:
+        return False
+
+    # Keep full tools through the current tool-call chain and the first user
+    # retry after the marker. Some models call the fallback, then answer with
+    # "send anything again" instead of immediately retrying the task. Expiring
+    # at the first user message recreates the same missing-tool loop.
+    user_messages_after_marker = sum(
+        1
+        for item in history[last_marker_index + 1 :]
+        if isinstance(item, dict) and item.get("role") == "user"
+    )
+    if user_messages_after_marker <= 1:
+        return True
     return False
+
+
+def _text_content(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_text_content(item) for item in value.values())
+    if isinstance(value, list | tuple):
+        return " ".join(_text_content(item) for item in value)
+    return ""
+
+
+def _recent_tool_mentions(conversation_history: list[Any] | None, schemas: list[Schema]) -> list[str]:
+    known_names = {
+        str(schema.get("name") or (schema.get("function") or {}).get("name") or "")
+        for schema in schemas
+        if isinstance(schema, dict)
+    }
+    known_names.discard("")
+    if not known_names:
+        return []
+
+    history = conversation_history or []
+    # conversation_history already includes the current user message in Hermes.
+    # Look at assistant/tool context immediately before that current user turn.
+    index = len(history) - 1
+    if index >= 0 and isinstance(history[index], dict) and history[index].get("role") == "user":
+        index -= 1
+
+    mentioned: list[str] = []
+    seen: set[str] = set()
+    while index >= 0:
+        item = history[index]
+        if isinstance(item, dict) and item.get("role") == "user":
+            break
+        text = _text_content(item)
+        for token in _TOOL_NAME_RE.findall(text):
+            if token in known_names and token not in seen:
+                mentioned.append(token)
+                seen.add(token)
+        index -= 1
+    return mentioned
+
+
+def _selection_query(user_message: str, conversation_history: list[Any] | None, schemas: list[Schema]) -> str:
+    mentions = _recent_tool_mentions(conversation_history, schemas)
+    if not mentions:
+        return user_message
+    return f"{user_message}\n\nRecent missing/needed tool mentions: {' '.join(mentions)}"
 
 
 def select_tool_schemas_callback(
@@ -159,8 +225,9 @@ def select_tool_schemas_callback(
             return None
 
         effective_cfg = cfg
+        query = _selection_query(user_message, conversation_history, schemas)
         result = ToolSelector(effective_cfg).select(
-            user_message,
+            query,
             schemas,
             conversation_history=conversation_history,
             model=model,
@@ -184,7 +251,7 @@ def select_tool_schemas_callback(
                 {**cfg.__dict__, "mode": "keyword", "anthropic": cfg.anthropic.__dict__}
             )
             result = ToolSelector(fallback_cfg).select(
-                user_message,
+                query,
                 schemas,
                 conversation_history=conversation_history,
                 model=model,

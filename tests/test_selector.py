@@ -122,6 +122,34 @@ def test_skill_manage_not_first_for_plain_file_edit():
     assert result.score_details["skill_manage"]["context_penalty"] < 0
 
 
+def test_skill_tools_are_kept_together_when_skill_context_selected():
+    cfg = ToolSlimmerConfig(top_k=1, always_include=[])
+    schemas = [
+        {"name": "skill_manage", "description": "Manage skills and update procedural memory"},
+        {"name": "skill_view", "description": "View a skill's full instructions"},
+        {"name": "skills_list", "description": "List available skills"},
+        {"name": "delegate_task", "description": "Delegate a task"},
+    ]
+
+    result = ToolSelector(cfg).select("update the skill for this workflow", schemas)
+
+    assert "skill_manage" in result.selected_names
+    assert "skill_view" in result.selected_names
+    assert "skills_list" in result.selected_names
+
+
+def test_recent_missing_tool_name_can_select_skill_view():
+    cfg = ToolSlimmerConfig(top_k=1, always_include=[])
+    schemas = [
+        {"name": "skill_view", "description": "View a skill's full instructions"},
+        {"name": "delegate_task", "description": "Delegate a task"},
+    ]
+
+    result = ToolSelector(cfg).select("12\n\nRecent missing/needed tool mentions: skill_view", schemas)
+
+    assert result.selected_names == ["skill_view"]
+
+
 def test_feishu_comment_tools_are_downranked_without_feishu_context():
     cfg = ToolSlimmerConfig(top_k=1, always_include=[])
     schemas = [

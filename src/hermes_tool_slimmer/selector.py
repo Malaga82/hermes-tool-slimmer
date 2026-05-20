@@ -17,6 +17,7 @@ LOG = logging.getLogger(__name__)
 
 SAFETY_TOOL_NAMES = ("tool_slimmer_request_full_tools",)
 NON_TASK_TOOL_NAMES = ("tool_slimmer_request_full_tools", "tool_slimmer_select", "tool_slimmer_status")
+SKILL_COMPANION_TOOL_NAMES = ("skill_view", "skills_list")
 
 BUILTIN_ALIASES = {
     "browse": ["browser", "navigate", "url", "web", "website", "page"],
@@ -125,6 +126,12 @@ class ToolSelector:
             selected_names.add(doc.name)
             remaining_slots -= 1
 
+        if _needs_skill_companions(query_tokens, selected_names):
+            for name in SKILL_COMPANION_TOOL_NAMES:
+                if name in by_name and name not in selected_names:
+                    selected.append(by_name[name])
+                    selected_names.add(name)
+
         if not selected and eligible and self.config.fail_open and self.config.top_k > 0:
             return SelectionResult(self.config.mode, schemas, [tool_name(s) for s in schemas], scores, len(schemas), always_present, fail_open=True, reason="selector produced empty set", score_details=score_details, expanded_query_tokens=query_tokens)
         return SelectionResult(self.config.mode, selected, [tool_name(s) for s in selected], scores, len(schemas), always_present, score_details=score_details, expanded_query_tokens=query_tokens)
@@ -191,6 +198,12 @@ def _always_include_names(configured: Iterable[str]) -> list[str]:
             names.append(name)
             seen.add(name)
     return names
+
+
+def _needs_skill_companions(query_tokens: list[str], selected_names: set[str]) -> bool:
+    if {"skill_manage", "skill_view", "skills_list"} & selected_names:
+        return True
+    return bool({"skill", "skills", "skill_view", "skills_list"} & set(query_tokens))
 
 
 def select_schemas(user_message: str, schemas: list[Schema], config: ToolSlimmerConfig | None = None, **kwargs: object) -> list[Schema]:

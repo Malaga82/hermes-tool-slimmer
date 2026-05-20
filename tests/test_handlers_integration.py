@@ -465,7 +465,7 @@ def test_full_tools_request_marker_persists_through_tool_call_chain(monkeypatch,
     assert out == schemas
 
 
-def test_full_tools_request_marker_resets_after_next_user_message(monkeypatch, tmp_path):
+def test_full_tools_request_marker_resets_after_retry_user_message(monkeypatch, tmp_path):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     schemas = [
         {"name": "read_file", "description": "Read files"},
@@ -473,6 +473,8 @@ def test_full_tools_request_marker_resets_after_next_user_message(monkeypatch, t
     ]
     conversation_history = [
         {"role": "tool", "content": json.dumps({FULL_TOOLS_REQUEST_MARKER: True})},
+        {"role": "assistant", "content": "Done with full tools."},
+        {"role": "user", "content": "retry"},
         {"role": "assistant", "content": "Done with full tools."},
         {"role": "user", "content": "new task"},
     ]
@@ -487,6 +489,80 @@ def test_full_tools_request_marker_resets_after_next_user_message(monkeypatch, t
     )
 
     assert out == [schemas[1]]
+
+
+def test_full_tools_request_marker_survives_first_user_retry(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    schemas = [
+        {"name": "read_file", "description": "Read files"},
+        {"name": "search_files", "description": "Search files"},
+    ]
+    conversation_history = [
+        {"role": "tool", "content": json.dumps({FULL_TOOLS_REQUEST_MARKER: True})},
+        {"role": "assistant", "content": "Send anything again and I will retry with full tools."},
+        {"role": "user", "content": "12"},
+    ]
+
+    out = select_tool_schemas_callback(
+        "12",
+        conversation_history,
+        schemas,
+        "model",
+        "slack",
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0, log_decisions=False),
+    )
+
+    assert out == schemas
+
+
+def test_full_tools_request_marker_expires_after_retry_user_turn(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    schemas = [
+        {"name": "read_file", "description": "Read files"},
+        {"name": "search_files", "description": "Search files"},
+    ]
+    conversation_history = [
+        {"role": "tool", "content": json.dumps({FULL_TOOLS_REQUEST_MARKER: True})},
+        {"role": "assistant", "content": "Send anything again and I will retry with full tools."},
+        {"role": "user", "content": "12"},
+        {"role": "assistant", "content": "Done."},
+        {"role": "user", "content": "new task"},
+    ]
+
+    out = select_tool_schemas_callback(
+        "search",
+        conversation_history,
+        schemas,
+        "model",
+        "slack",
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0, log_decisions=False),
+    )
+
+    assert out == [schemas[1]]
+
+
+def test_recent_assistant_tool_mention_influences_ambiguous_retry(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    schemas = [
+        {"name": "skill_view", "description": "Load a skill's full content"},
+        {"name": "delegate_task", "description": "Delegate implementation work"},
+    ]
+    conversation_history = [
+        {"role": "user", "content": "check codex usage"},
+        {"role": "assistant", "content": "I need skill_view to run this lookup correctly."},
+        {"role": "user", "content": "12"},
+    ]
+
+    out = select_tool_schemas_callback(
+        "12",
+        conversation_history,
+        schemas,
+        "model",
+        "slack",
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0, log_decisions=False),
+    )
+
+    assert out == [schemas[0]]
 
 
 def test_selector_syncs_index_from_live_request_schemas(monkeypatch, tmp_path):

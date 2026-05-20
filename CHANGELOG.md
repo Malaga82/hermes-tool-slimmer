@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.7 - 2026-05-20
+
+Missing skill-tool fallback release.
+
+### Fixed
+
+- Full-tool fallback now survives the first user retry after `tool_slimmer_request_full_tools`, covering the common chat flow where the model asks the user to send another message before retrying.
+- Ambiguous retry messages now use recent assistant/tool mentions of known tool names, so a follow-up like `12` can still expose a recently requested tool such as `skill_view`.
+- Skill companion tools are kept together: selecting `skill_manage` or skill-context requests also keeps `skill_view` and `skills_list` available when present.
+
 ## 0.4.6 - 2026-05-19
 
 Dashboard git-install compatibility release.
