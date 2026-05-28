@@ -28,6 +28,19 @@ def test_index_store_saves_last_live_schemas(tmp_path):
 
     assert payload["total_tools"] == 20
     assert store.load_live_schemas() == schemas
+    assert store.load_live_schema_snapshot("tui")["schemas"] == schemas
+
+
+def test_index_store_tracks_live_schema_summaries_by_platform(tmp_path):
+    store = IndexStore(tmp_path)
+    store.save_live_schemas([{"name": "cli_tool", "description": "Read"}], {"platform": "cli", "session_id": "cli-1", "model": "m"})
+    store.save_live_schemas([{"name": "api_tool", "description": "Read"}], {"platform": "api_server", "session_id": "api-1"})
+
+    summaries = store.live_schema_summaries()
+
+    assert {item["platform"] for item in summaries} == {"cli", "api_server"}
+    assert any(item["label"] == "latest" and item["platform"] == "api_server" for item in summaries)
+    assert any(item["label"] == "cli" and item["session_id"] == "cli-1" for item in summaries)
 
 
 def test_index_store_ignores_probe_live_schemas(tmp_path):

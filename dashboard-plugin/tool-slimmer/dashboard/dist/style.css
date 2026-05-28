@@ -167,6 +167,19 @@
   padding: 0.5rem;
 }
 
+.tool-slimmer-snapshot-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.tool-slimmer-snapshot-row span {
+  border: 1px solid hsl(var(--border));
+  font-family: var(--font-courier);
+  font-size: 0.72rem;
+  padding: 0.25rem 0.45rem;
+}
+
 .tool-slimmer-score-row {
   border-bottom: 1px solid hsl(var(--border));
   display: grid;

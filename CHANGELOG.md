@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.1 - 2026-05-28
+
+Live snapshot clarity release.
+
+### Added
+
+- Per-platform live schema snapshots for TUI, Slack, Telegram, and API server turns.
+- Dashboard and CLI status context explaining which live request snapshot populated the persisted index.
+- Dashboard snapshot chips so users can see why Hermes TUI and Tool Slimmer counts may differ by entry point.
+
+### Tested
+
+- Verified TUI, Slack, Telegram, and API server turns against live Hermes with full-tool fallback available.
+- Smoke-tested a clean Hermes install on a disposable exe.dev VM, including installer patching, doctor, status, and eval.
+
 ## 0.5.0 - 2026-05-27
 
 Guided setup and profile tuning release.

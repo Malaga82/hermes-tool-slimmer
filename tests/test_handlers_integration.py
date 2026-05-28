@@ -289,7 +289,10 @@ def test_cli_status_index_select_recommend_and_main(tmp_path, capsys, monkeypatc
     schemas.write_text("schemas:\n- name: search_files\n  description: Search files\n")
 
     assert handle_cli(Namespace(command="status", config=None)) == 0
-    assert json.loads(capsys.readouterr().out)["total_tools_indexed"] == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["total_tools_indexed"] == 0
+    assert status["source_context"] is None
+    assert status["live_snapshots"] == []
 
     assert handle_cli(Namespace(command="index", index_command="rebuild", schemas=str(schemas), config=None)) == 0
     rebuilt = json.loads(capsys.readouterr().out)

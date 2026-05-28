@@ -361,7 +361,24 @@ def handle_cli(args: argparse.Namespace) -> int:
     if args.command == "status":
         store = IndexStore()
         index = store.load() or {}
-        print(json.dumps({"enabled": cfg.enabled, "mode": cfg.mode, "top_k": cfg.top_k, "min_score": cfg.min_score, "index_path": str(store.path), "total_tools_indexed": index.get("total_tools", 0), "core_integration": "active when Hermes exposes select_tool_schemas hook or applies docs/hermes-core-selector-hook.patch"}, indent=2))
+        live_snapshots = store.live_schema_summaries()
+        latest_live = next((item for item in live_snapshots if item.get("label") == "latest"), None)
+        print(
+            json.dumps(
+                {
+                    "enabled": cfg.enabled,
+                    "mode": cfg.mode,
+                    "top_k": cfg.top_k,
+                    "min_score": cfg.min_score,
+                    "index_path": str(store.path),
+                    "total_tools_indexed": index.get("total_tools", 0),
+                    "source_context": latest_live,
+                    "live_snapshots": live_snapshots,
+                    "core_integration": "active when Hermes exposes select_tool_schemas hook or applies docs/hermes-core-selector-hook.patch",
+                },
+                indent=2,
+            )
+        )
         return 0
     if args.command == "index":
         store = IndexStore()

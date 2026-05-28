@@ -124,6 +124,14 @@
     const doctor = (data.status && data.status.doctor && data.status.doctor.checks) || {};
     const recent = summary.recent || [];
     const indexDocs = index.documents || [];
+    const indexSource = index.source_context || {};
+    const liveSnapshots = index.live_snapshots || [];
+    const uniqueLiveSnapshots = liveSnapshots.filter(function (snapshot, snapshotIndex) {
+      const platform = snapshot.platform || snapshot.label || "";
+      return liveSnapshots.findIndex(function (candidate) {
+        return (candidate.platform || candidate.label || "") === platform;
+      }) === snapshotIndex;
+    });
     const advisor = data.advisor || {};
     const privacy = data.privacy || {};
     const recommendations = advisor.recommendations || [];
@@ -352,6 +360,18 @@
               React.createElement("div", null, React.createElement("div", { className: "tool-slimmer-muted text-xs" }, "Tools"), React.createElement("div", { className: "font-medium" }, String(index.total_tools || 0))),
               React.createElement("div", null, React.createElement("div", { className: "tool-slimmer-muted text-xs" }, "Updated"), React.createElement("div", { className: "font-medium" }, fmtIndexTime(index.updated_at))),
               React.createElement("div", null, React.createElement("div", { className: "tool-slimmer-muted text-xs" }, "Checksum"), React.createElement("div", { className: "font-courier" }, shortChecksum(index.checksum))),
+            ),
+            React.createElement("div", { className: "tool-slimmer-callout" },
+              indexSource.platform
+                ? "Indexed from the latest live " + indexSource.platform + " selector snapshot (" + String(indexSource.total_tools || indexSource.schema_count || 0) + " tools). Other Hermes entry points can legitimately have different tool counts until they run."
+                : "This is an audit snapshot. Hermes selection uses the live request schemas in memory, so counts can differ by platform.",
+            ),
+            uniqueLiveSnapshots.length > 1 && React.createElement("div", { className: "tool-slimmer-snapshot-row" },
+              uniqueLiveSnapshots.slice(0, 6).map(function (snapshot) {
+                return React.createElement("span", { key: (snapshot.label || "") + ":" + (snapshot.platform || "") },
+                  (snapshot.platform || snapshot.label || "unknown") + " " + String(snapshot.total_tools || 0),
+                );
+              }),
             ),
             React.createElement("div", { className: "tool-slimmer-path" }, index.path || "No index path available"),
             indexMessage && React.createElement("div", { className: "tool-slimmer-callout" }, indexMessage),

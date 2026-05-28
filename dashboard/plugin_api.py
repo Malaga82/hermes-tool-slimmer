@@ -32,6 +32,8 @@ def _load_modules():
 def _summarize_index(store: Any) -> dict[str, Any]:
     index = store.load() or {}
     documents = index.get("documents") if isinstance(index.get("documents"), list) else []
+    live_snapshots = store.live_schema_summaries() if hasattr(store, "live_schema_summaries") else []
+    latest_live = next((item for item in live_snapshots if item.get("label") == "latest"), None)
     try:
         updated_at = store.path.stat().st_mtime
     except OSError:
@@ -42,6 +44,8 @@ def _summarize_index(store: Any) -> dict[str, Any]:
         "total_tools": _safe_int(index.get("total_tools")),
         "checksum": index.get("checksum"),
         "updated_at": updated_at,
+        "source_context": latest_live,
+        "live_snapshots": live_snapshots,
         "documents": [
             {
                 "name": str(doc.get("name") or ""),
@@ -53,7 +57,7 @@ def _summarize_index(store: Any) -> dict[str, Any]:
         ],
         "live_selection": {
             "uses_persisted_index": False,
-            "message": "Hermes selection ranks the live request tool schemas in memory; the persisted index is for inspection, audits, and troubleshooting.",
+            "message": "Hermes selection ranks the live request tool schemas in memory. The persisted index is an audit snapshot and can differ by platform until each entry point has run.",
         },
     }
 
