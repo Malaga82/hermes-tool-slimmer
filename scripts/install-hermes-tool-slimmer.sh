@@ -190,6 +190,8 @@ def patch_modular_core(conversation_py: Path, helpers_py: Path) -> None:
     conversation_text = conversation_py.read_text(encoding="utf-8")
     if 'def _select_tools_for_request() -> list | None:' not in conversation_text:
         marker = '        # Main conversation loop\n'
+        if marker not in conversation_text:
+            marker = '        while retry_count < max_retries:\n'
         selector = (
             "        def _select_tools_for_request() -> list | None:\n"
             "            if not agent.tools:\n"
@@ -222,7 +224,7 @@ def patch_modular_core(conversation_py: Path, helpers_py: Path) -> None:
             "            return tools_for_request\n\n"
         )
         if marker not in conversation_text:
-            raise SystemExit("Could not find main conversation loop marker in agent/conversation_loop.py")
+            raise SystemExit("Could not find request retry loop marker in agent/conversation_loop.py")
         conversation_text = conversation_text.replace(marker, selector + marker, 1)
 
     old_request_patch = (
