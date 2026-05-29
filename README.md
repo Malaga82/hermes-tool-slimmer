@@ -1,6 +1,11 @@
-# Hermes Tool Slimmer
+# hermes-tool-slimmer — Fork Malaga82
 
-[![Tests](https://github.com/alias8818/hermes-tool-slimmer/actions/workflows/tests.yml/badge.svg)](https://github.com/alias8818/hermes-tool-slimmer/actions/workflows/tests.yml)
+Fork of [alias8818/hermes-tool-slimmer](https://github.com/alias8818/hermes-tool-slimmer) (upstream v0.5.2 merged) with custom patches for:
+1. **Italian alias expansion** — BM25 tokenizer expands Italian queries to English for better tool matching
+2. **Auto-expanding dictionary** — cron script uses LLM to add new Italian→English mappings
+3. **Gateway wrapper integration** — startup patch checker integrated in container boot
+
+|[![Tests](https://github.com/alias8818/hermes-tool-slimmer/actions/workflows/tests.yml/badge.svg)](https://github.com/alias8818/hermes-tool-slimmer/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776ab)
 ![Ruff](https://img.shields.io/badge/lint-ruff-46a2f1)
 ![License](https://img.shields.io/badge/license-MIT-green)

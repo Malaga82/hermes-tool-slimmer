@@ -1,0 +1,85 @@
+# Italian → English alias dictionary for tool-slimmer BM25 tokenizer
+# Auto-expanded periodically by cron job
+# Format: italian_word: english equivalents (space-separated)
+
+# Core actions
+cerca: search find query
+trova: find search locate
+leggi: read load view
+scrivi: write save create
+modifica: edit modify patch update
+cancella: delete remove
+crea: create new make
+installa: install setup
+esegui: run execute launch
+avvia: start run launch
+ferma: stop kill halt
+riavvia: restart reboot
+controlla: check verify inspect
+verifica: verify check validate
+mostra: show display list
+elenca: list enumerate
+apri: open
+chiudi: close
+invia: send post
+ricevi: receive get
+scarica: download fetch
+carica: upload load
+
+# Domains
+internet: web http url online
+web: web http url online
+file: file path directory
+cartella: directory folder
+immagine: image picture photo screenshot
+video: video
+audio: audio music sound
+testo: text content
+codice: code source
+errore: error bug exception
+problema: problem issue bug
+configura: config configure setup
+aggiorna: update upgrade
+analizza: analyze parse
+confronta: compare diff
+traduci: translate
+
+# Infrastructure
+server: server host
+database: database db sql sqlite
+proxy: proxy forward
+docker: docker container
+processo: process pid
+porta: port
+rete: network
+cron: cron schedule timer
+schedulato: scheduled cron
+
+# Hermes concepts
+memoria: memory remember
+sessione: session conversation
+skill: skill plugin
+plugin: plugin extension
+token: token
+gateway: gateway
+modello: model llm
+
+# Common queries
+prezzo: price cost market
+grafico: chart graph plot
+tabella: table
+notifica: notification alert
+email: email mail message
+messaggio: message chat
+documento: document file
+report: report summary
+
+# Dev
+compila: compile build
+deploya: deploy publish
+branch: branch git
+commit: commit git
+pull: pull git fetch
+push: push git
+repository: repo git
+log: log debug trace

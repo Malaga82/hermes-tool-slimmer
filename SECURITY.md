@@ -6,6 +6,7 @@ Hermes Tool Slimmer changes which tool schemas are presented to the model. It do
 
 | Version | Supported |
 |---|---|
+| 0.4.x | Yes |
 | 0.1.x | Yes |
 
 ## Reporting a vulnerability

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .integration import maybe_register_selector_hook
+from .integration import maybe_register_selector_hook, post_api_request_callback
 from .schemas import REQUEST_FULL_TOOLS_SCHEMA, SELECT_SCHEMA, STATUS_SCHEMA
 from .tools import tool_slimmer_request_full_tools, tool_slimmer_select, tool_slimmer_status
 
@@ -19,3 +19,11 @@ def register(ctx):
     ctx.register_command("tool-slimmer", handler=handle_slash_command, description="Inspect and manage Hermes Tool Slimmer")
     ctx.register_cli_command(name="tool-slimmer", help="Inspect and manage Hermes Tool Slimmer", setup_fn=setup_argparse, handler_fn=handle_cli)
     maybe_register_selector_hook(ctx)
+    # Register post_api_request hook to capture actual token usage
+    register_hook = getattr(ctx, "register_hook", None)
+    if callable(register_hook):
+        try:
+            register_hook("post_api_request", post_api_request_callback)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("post_api_request hook registration failed: %s", exc)

@@ -325,6 +325,28 @@ def pre_llm_diagnostic_hook(**kwargs: Any) -> dict[str, str] | None:
     }
 
 
+def post_api_request_callback(**kwargs: Any) -> None:
+    """Capture actual token usage from every API call for accurate analytics."""
+    try:
+        usage = kwargs.get("usage")
+        if not usage or not isinstance(usage, dict):
+            return
+        from .metrics import record_actual_usage
+        record_actual_usage(
+            session_id=kwargs.get("session_id"),
+            model=kwargs.get("model"),
+            provider=kwargs.get("provider"),
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            cache_read=usage.get("cache_read_tokens", 0),
+            cache_creation=usage.get("cache_creation_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0),
+            api_duration=kwargs.get("api_duration"),
+        )
+    except Exception:
+        LOG.debug("tool-slimmer post_api_request hook failed", exc_info=True)
+
+
 def _known_valid_hooks(ctx: Any) -> set[str] | None:
     valid_hooks = getattr(ctx, "valid_hooks", None) or getattr(ctx, "VALID_HOOKS", None)
     manager = getattr(ctx, "_manager", None)

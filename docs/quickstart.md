@@ -2,7 +2,7 @@
 
 ## 1. Install
 
-Use Tool Slimmer v0.4.0+ with Hermes Agent v0.14.0. Older Tool Slimmer releases are not functionally compatible with Hermes v0.14.0 active schema slimming because the provider request construction code moved.
+Use Tool Slimmer v0.4.7+ with Hermes Agent v0.14.0. Older Tool Slimmer releases are not functionally compatible with Hermes v0.14.0 active schema slimming because the provider request construction code moved.
 
 ### Dashboard Install
 
