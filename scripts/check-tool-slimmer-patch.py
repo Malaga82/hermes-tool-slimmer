@@ -19,7 +19,18 @@ import sys
 
 HERMES_DIR = "/opt/hermes"
 
-# Markers for the v0.14.0+ patch (current)
+# Markers for the v0.15.1+ patch (modular layout)
+PATCH_MARKERS_V15 = {
+    "agent/conversation_loop.py": [
+        "_select_tools_for_request",
+        "select_tool_schemas",
+    ],
+    "hermes_cli/plugins.py": [
+        "select_tool_schemas",
+    ],
+}
+
+# Markers for the v0.14.0 patch (monolithic, keep for backward compat)
 PATCH_MARKERS_V14 = {
     "run_agent.py": [
         "_select_tools_for_request",
@@ -62,9 +73,14 @@ def _check_markers(markers: dict) -> tuple[bool, list[str]]:
 
 
 def check_patch() -> tuple[bool, list[str]]:
-    """Check if core patch markers exist. Supports v0.13.0 and v0.14.0 layouts."""
+    """Check if core patch markers exist. Supports v0.15.1+, v0.14.0, and v0.13.0 layouts."""
 
-    # Try v0.14.0+ markers first (current)
+    # Try v0.15.1+ markers first (modular layout)
+    applied, missing = _check_markers(PATCH_MARKERS_V15)
+    if applied:
+        return True, []
+
+    # Try v0.14.0 markers (monolithic)
     applied, missing = _check_markers(PATCH_MARKERS_V14)
     if applied:
         return True, []
@@ -74,7 +90,7 @@ def check_patch() -> tuple[bool, list[str]]:
     if applied_v13:
         return True, []
 
-    # Return v0.14.0 missing markers (current expected layout)
+    # Return v0.15.1 missing markers (current expected layout)
     return False, missing
 
 
