@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.0 - 2026-05-29
+
+Experimental two-pass schema hydration release.
+
+### Added
+
+- Experimental `mode: two_pass` with compact deterministic tool catalogs, batched schema hydration through `tool_slimmer_hydrate_tools`, session-scoped hydrated-tool caching, decision-log metrics, CLI/doctor/status visibility, and dashboard diagnostics.
+
+## 0.5.3 - 2026-05-29
+
+Dashboard git-install repair release.
+
+### Fixed
+
+- Dashboard git installs now include the root dashboard bundle assets expected by Hermes' `/dashboard-plugins/tool-slimmer/dist/...` static routes.
+- Git-installed dashboard/API loading can import the repo-local `src/hermes_tool_slimmer` package before the repair installer has installed the Python package into the Hermes venv.
+
 ## 0.5.2 - 2026-05-28
 
 Hermes update repair release.
