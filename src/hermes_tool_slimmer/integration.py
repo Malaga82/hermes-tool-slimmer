@@ -9,6 +9,7 @@ from .anthropic_tool_search import maybe_anthropic_tools
 from .config import ToolSlimmerConfig, load_config
 from .index_store import IndexStore
 from .metrics import record_decision, reduction_metrics
+from .native import native_tool_search_active, native_tool_search_bridge_names
 from .selector import ToolSelector
 from .tools import FULL_TOOLS_REQUEST_MARKER
 from .two_pass import (
@@ -261,6 +262,31 @@ def select_tool_schemas_callback(
                 "schema_count": len(schemas),
             },
         )
+        if native_tool_search_active(schemas):
+            bridge_tools = native_tool_search_bridge_names(schemas)
+            metrics = reduction_metrics(cfg.mode, schemas, schemas, [])
+            metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)
+            metrics["skipped"] = True
+            metrics["skip_reason"] = "native_hermes_tool_search_active"
+            metrics["native_hermes_tool_search"] = True
+            metrics["native_hermes_bridge_tools"] = bridge_tools
+            if cfg.log_decisions:
+                LOG.info("tool-slimmer skipped; Hermes native Tool Search is active", extra={"tool_slimmer": metrics})
+                try:
+                    record_decision(
+                        metrics,
+                        {
+                            "provider": provider,
+                            "model": model,
+                            "platform": platform,
+                            "session_id": session_id,
+                            "dry_run": cfg.dry_run,
+                            "schema_count": len(schemas),
+                        },
+                    )
+                except Exception as exc:
+                    LOG.warning("tool-slimmer decision logging failed: %s", exc)
+            return None
         if _full_tools_requested(conversation_history):
             metrics = reduction_metrics(cfg.mode, schemas, schemas, [])
             metrics["selection_ms"] = round((perf_counter() - started) * 1000, 3)

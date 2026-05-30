@@ -84,6 +84,8 @@ The dashboard headline excludes probe/test events that do not have a Hermes `ses
 
 Run `hermes tool-slimmer doctor`. If the core selector hook is unavailable, Hermes Tool Slimmer can benchmark and log dry-run decisions but cannot replace schemas sent to providers.
 
+If `doctor`, `status`, or recent decisions mention `native_hermes_tool_search_active`, Hermes has already replaced deferrable MCP/plugin schemas with its native `tool_search` / `tool_describe` / `tool_call` bridge. Tool Slimmer intentionally skips active slimming for that request so it does not remove the bridge Hermes needs to reach deferred tools. This is expected on newer Hermes builds when Hermes' own tool schema threshold is crossed.
+
 On Hermes Agent v0.14.0, use Tool Slimmer v0.4.0 or newer and rerun `scripts/install-hermes-tool-slimmer.sh` so the installer applies the modular core patch. Older Tool Slimmer releases targeted the previous `run_agent.py` request path and will not actively slim v0.14.0 provider requests.
 
 Also check `tool_slimmer.min_total_tools` and `tool_slimmer.min_estimated_reduction_percent`. By default, Tool Slimmer ranks even small catalogs (`min_total_tools: 0`) so subagents and restricted toolsets still benefit, then skips ranked selections under 5% estimated schema reduction. Raise `min_total_tools` only for cron/small-toolset paths where the overhead is not worth the tiny savings.

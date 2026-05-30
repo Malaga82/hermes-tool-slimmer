@@ -10,6 +10,12 @@
 
 Hermes Tool Slimmer reduces repeated tool-schema overhead by selecting the smallest useful tool set for a turn. It builds an indexable corpus from Hermes tool schemas, ranks candidate tools with local BM25 plus explicit boosts, and fails open to the original schema list when anything goes wrong.
 
+## Hermes Native Tool Search
+
+Recent Hermes Agent builds include a native progressive tool loader that exposes `tool_search`, `tool_describe`, and `tool_call` when MCP/plugin tools cross Hermes' own schema budget threshold. Tool Slimmer detects that native bridge and will not double-slim those requests. In that case Hermes keeps control of lazy loading, while Tool Slimmer keeps the dashboard, diagnostics, counters, advisor, and local ranking/eval tools useful.
+
+Do not run Tool Slimmer `two_pass` mode on top of Hermes native Tool Search unless you are intentionally testing. If you want Tool Slimmer to be the active selector instead, disable Hermes native Tool Search in Hermes config first; otherwise the safe default is to let Hermes' built-in bridge handle the request.
+
 ## Support
 
 For Tool Slimmer install bugs, dashboard issues, ranking misses, or configuration questions, please open an issue at [alias8818/hermes-tool-slimmer](https://github.com/alias8818/hermes-tool-slimmer/issues) instead of posting inside unrelated Hermes Agent issue threads. You can also reach Aliasocracy on Discord at `Aliasocracy#1439`; mention Hermes Tool Slimmer in the message so it is clear the contact is about this project.

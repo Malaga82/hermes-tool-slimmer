@@ -852,6 +852,33 @@ def test_pre_llm_hook_keeps_dry_run_diagnostic(monkeypatch, tmp_path):
     assert "dry-run" in out["context"]
 
 
+def test_selector_skips_when_hermes_native_tool_search_is_active(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    schemas = [
+        {"name": "terminal", "description": "Run commands"},
+        {"name": "tool_search", "description": "Search deferred tools"},
+        {"name": "tool_describe", "description": "Describe deferred tools"},
+        {"name": "tool_call", "description": "Call deferred tools"},
+        {"name": "web_search", "description": "Search the web"},
+    ]
+
+    selected = select_tool_schemas_callback(
+        "search the web",
+        [],
+        schemas,
+        "model",
+        "tui",
+        session_id="native-tool-search-test",
+        config=ToolSlimmerConfig(top_k=1, always_include=[], min_total_tools=0),
+    )
+
+    assert selected is None
+    event = read_decisions()[0]
+    assert event["metrics"]["skipped"] is True
+    assert event["metrics"]["skip_reason"] == "native_hermes_tool_search_active"
+    assert event["metrics"]["native_hermes_bridge_tools"] == ["tool_call", "tool_describe", "tool_search"]
+
+
 def test_doctor_reports_invalid_config_without_crashing(tmp_path):
     from argparse import Namespace
     from hermes_tool_slimmer.cli import handle_cli
