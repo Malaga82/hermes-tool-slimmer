@@ -10,9 +10,12 @@ router = APIRouter()
 
 
 def _ensure_local_src_path() -> None:
-    src_dir = Path(__file__).resolve().parents[1] / "src"
-    if src_dir.exists() and str(src_dir) not in sys.path:
-        sys.path.insert(0, str(src_dir))
+    for src_dir in (
+        Path(__file__).resolve().parents[1] / "src",
+        Path(__file__).resolve().parents[2] / "src",
+    ):
+        if src_dir.exists() and str(src_dir) not in sys.path:
+            sys.path.insert(0, str(src_dir))
 
 
 def _safe_int(value: Any) -> int:
@@ -116,19 +119,16 @@ def _hermes_tool_definitions() -> list[dict[str, Any]]:
 
 
 def _live_hermes_schemas() -> tuple[list[dict[str, Any]], str]:
-    candidates: list[tuple[list[dict[str, Any]], str]] = []
     hermes_error: HTTPException | None = None
     try:
         schemas = _hermes_tool_definitions()
     except HTTPException as exc:
         hermes_error = exc
     else:
-        candidates.append((schemas, "hermes"))
+        return schemas, "hermes"
     last_live = _last_live_request_schemas()
     if last_live:
-        candidates.append((last_live, "live_request"))
-    if candidates:
-        return max(candidates, key=lambda item: len(item[0]))
+        return last_live, "live_request"
     if hermes_error is not None:
         raise hermes_error
     raise HTTPException(
@@ -294,6 +294,19 @@ async def advisor_rollback(payload: dict[str, Any] = Body(...)) -> dict[str, Any
 async def privacy() -> dict[str, Any]:
     _analyze_config, _apply_recommended_config, _apply_tool_preference, _rollback_config, _eval_markdown, _eval_prompts, privacy_inventory, _run_doctor, _load_config, _IndexStore, _read_decisions, _summarize_decisions = _load_modules()
     return {"ok": True, "privacy": privacy_inventory()}
+
+
+@router.get("/diagnostics")
+async def diagnostics(limit: int = Query(default=200, ge=1, le=10000)) -> dict[str, Any]:
+    _ensure_local_src_path()
+    try:
+        from hermes_tool_slimmer.cli import diagnostic_report
+    except Exception as exc:  # pragma: no cover - import environment dependent
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "tool_slimmer_unavailable", "message": str(exc)},
+        ) from exc
+    return {"ok": True, "diagnostics": diagnostic_report(limit=limit)}
 
 
 @router.get("/eval-report")
