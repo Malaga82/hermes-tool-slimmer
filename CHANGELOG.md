@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.5 - 2026-06-05
+
+Post-Hermes-update compatibility and packaging guardrail release.
+
+### Added
+
+- Added dashboard asset, package asset, and schema-contract regression checks inspired by review of the `rzyns/hermes-tool-slimmer` fork. These checks guard the shipped dashboard/plugin layout without adopting the fork's experimental progressive or semantic ranking code.
+
+### Fixed
+
+- `hermes tool-slimmer select` now falls back to the persisted tool index, then live snapshots, when `--schemas` is not supplied.
+- Wheel builds now include the dashboard and dashboard-plugin files required by Hermes dashboard/plugin installs.
+
 ## 0.6.4 - 2026-05-30
 
 Installer environment override repair.

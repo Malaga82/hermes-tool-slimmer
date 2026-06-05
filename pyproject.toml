@@ -29,7 +29,7 @@ artifacts = [
 
 [project]
 name = "hermes-tool-slimmer"
-version = "0.6.4"
+version = "0.6.5"
 description = "Reduce Hermes Agent tool schema overhead with provider-aware tool selection"
 readme = "README.md"
 license = { text = "MIT" }
@@ -85,3 +85,7 @@ pythonpath = ["src"]
 [tool.mypy]
 explicit_package_bases = true
 mypy_path = "src"
+
+[tool.hatch.build.targets.wheel]
+packages = ["/src/hermes_tool_slimmer"]
+force-include = { "dashboard" = "dashboard", "dashboard-plugin" = "dashboard-plugin", "plugin.yaml" = "plugin.yaml" }

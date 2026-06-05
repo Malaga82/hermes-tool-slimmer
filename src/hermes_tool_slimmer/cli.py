@@ -41,6 +41,20 @@ def _load_schemas(path: str | None) -> list[dict[str, Any]]:
     return data if isinstance(data, list) else []
 
 
+def _load_cli_schemas(path: str | None) -> tuple[list[dict[str, Any]], str]:
+    schemas = _load_schemas(path)
+    if schemas:
+        return schemas, "file"
+    store = IndexStore()
+    indexed_schemas = _schemas_from_index(store.load())
+    if indexed_schemas:
+        return indexed_schemas, "index"
+    live_schemas = store.load_live_schemas(require_session=False)
+    if live_schemas:
+        return live_schemas, "live"
+    return [], "none"
+
+
 def _schemas_from_index(index: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(index, dict):
         return []
@@ -539,9 +553,22 @@ def handle_cli(args: argparse.Namespace) -> int:
         print(json.dumps(index.get("documents", [])[: args.top], indent=2))
         return 0
     if args.command == "select":
-        schemas = _load_schemas(args.schemas)
+        schemas, schema_source = _load_cli_schemas(args.schemas)
         result = ToolSelector(cfg).select(args.query, schemas)
-        print(json.dumps({"selected": result.selected_names, "scores": result.scores, "score_details": result.score_details, "fail_open": result.fail_open}, indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "selected": result.selected_names,
+                    "scores": result.scores,
+                    "score_details": result.score_details,
+                    "fail_open": result.fail_open,
+                    "schema_count": len(schemas),
+                    "schema_source": schema_source,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return 0
     if args.command == "benchmark":
         schemas = _load_schemas(args.schemas)
