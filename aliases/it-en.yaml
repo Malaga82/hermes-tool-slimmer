@@ -29,7 +29,7 @@ carica: upload load
 # Domains
 internet: web http url online
 web: web http url online
-file: file path directory
+# "file" is a direct English loanword in Italian — no expansion needed
 cartella: directory folder
 immagine: image picture photo screenshot
 video: video

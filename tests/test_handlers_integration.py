@@ -323,6 +323,13 @@ def test_cli_status_index_select_recommend_and_main(tmp_path, capsys, monkeypatc
     assert handle_cli(Namespace(command="select", query="search files", schemas=str(schemas), config=None)) == 0
     selected = json.loads(capsys.readouterr().out)
     assert selected["selected"] == ["search_files"]
+    assert selected["schema_source"] == "file"
+
+    assert handle_cli(Namespace(command="select", query="search files", schemas=None, config=None)) == 0
+    selected = json.loads(capsys.readouterr().out)
+    assert selected["selected"] == ["search_files"]
+    assert selected["schema_source"] == "index"
+    assert selected["schema_count"] == 1
 
     assert handle_cli(Namespace(command="recommend-config", config=None)) == 0
     assert "tool_slimmer:" in capsys.readouterr().out
